@@ -1,0 +1,172 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-cheap: var(--cheap);
+  --color-mid: var(--mid);
+  --color-high: var(--high);
+}
+
+:root {
+  --bg: #f3f0e8;
+  --surface: #fffcf8;
+  --ink: #1c1915;
+  --muted: #6f675e;
+  --line: #e4ddd2;
+  --accent: #0c6b5c;
+  --accent-contrast: #f4fffb;
+  --shadow: 0 10px 28px rgba(48, 38, 22, 0.08);
+  --cheap: #1b7a46;
+  --mid: #9a6700;
+  --high: #b42318;
+  --map-bg: #e7e1d6;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #101412;
+  --surface: #1a1f1c;
+  --ink: #f4f1ea;
+  --muted: #b7aea4;
+  --line: #2d3430;
+  --accent: #3dbea6;
+  --accent-contrast: #06221c;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+  --cheap: #8ee0b0;
+  --mid: #f3c56a;
+  --high: #ff9b8d;
+  --map-bg: #0d100f;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: var(--map-bg);
+  font-family: inherit;
+}
+
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--surface) 90%, transparent) !important;
+  color: var(--muted) !important;
+  font-size: 10px !important;
+  max-width: 70%;
+}
+
+.leaflet-control-attribution a {
+  color: var(--ink) !important;
+}
+
+.price-marker-icon {
+  background: transparent;
+  border: none;
+}
+
+.price-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 3px 8px 3px 7px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.price-marker::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--band, var(--mid));
+}
+
+.price-marker[data-band='cheap'] {
+  --band: var(--cheap);
+}
+
+.price-marker[data-band='mid'] {
+  --band: var(--mid);
+  border-radius: 9px;
+}
+
+.price-marker[data-band='mid']::before {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.price-marker[data-band='high'] {
+  --band: var(--high);
+  border-radius: 7px;
+}
+
+.price-marker[data-band='high']::before {
+  border-radius: 2px;
+}
+
+.price-marker[data-selected='true'] {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow);
+}
+
+.reposta-cluster {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

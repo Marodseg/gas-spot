@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Reposta">
+  <rect width="64" height="64" rx="16" fill="#0c6b5c"/>
+  <circle cx="32" cy="26" r="10" fill="#f4fffb"/>
+  <circle cx="32" cy="26" r="4" fill="#0c6b5c"/>
+  <rect x="29.5" y="34" width="5" height="14" rx="2" fill="#f4fffb"/>
+</svg>
