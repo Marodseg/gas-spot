@@ -57,7 +57,7 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: /^https:\/\/.*basemaps\.cartocdn\.com\/.*/i,
+            urlPattern: /^https:\/\/tiles\.openfreemap\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',

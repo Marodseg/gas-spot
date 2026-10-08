@@ -18,7 +18,7 @@ Abres la web, eliges el combustible, ves el mapa y la lista, y sales hacia la es
 
 ## Stack
 
-React, TypeScript estricto, Vite, Tailwind CSS, Leaflet, OpenStreetMap a través de teselas CARTO, Lucide, Zustand y Zod. Los tests usan Vitest y Testing Library.
+React, TypeScript estricto, Vite, Tailwind CSS, MapLibre y teselas de [OpenFreeMap](https://openfreemap.org/) (OpenStreetMap, sin clave), Lucide, Zustand y Zod. Los tests usan Vitest y Testing Library.
 
 No hay backend propio. En producción es un sitio estático.
 
@@ -110,7 +110,7 @@ La última búsqueda, el combustible y los ajustes de estimación se guardan en 
 - La API consultada no devuelve servicios de la estación (tienda, lavado). Si en el futuro llega un campo `servicios`, la ficha lo muestra.
 - El horario se interpreta en Europa/Madrid. Si el texto no sigue el formato `L-V: 07:30-22:00`, el estado queda como no confirmado y el filtro “Abiertas” no la oculta.
 - “Abierta ahora” y el ahorro del desvío son ayudas, no datos oficiales.
-- Las teselas de CARTO y Photon son servicios gratuitos con políticas de uso. Un tráfico muy alto puede exigir otro proveedor de mapas.
+- El mapa usa OpenFreeMap, sin clave de Google Maps ni de CARTO. Photon sigue siendo un servicio gratuito con política de uso. Un tráfico muy alto puede exigir otro proveedor.
 - La browser key es visible para quien descarga la web. Su única protección es la restricción de origin en Precioil.
 
 ## Roadmap

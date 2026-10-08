@@ -73,27 +73,42 @@ select {
   outline-offset: 2px;
 }
 
-.leaflet-container {
+.maplibregl-map {
   height: 100%;
   width: 100%;
   background: var(--map-bg);
   font-family: inherit;
 }
 
-.leaflet-control-attribution {
+.maplibregl-ctrl-attrib {
   background: color-mix(in srgb, var(--surface) 90%, transparent) !important;
   color: var(--muted) !important;
   font-size: 10px !important;
   max-width: 70%;
 }
 
-.leaflet-control-attribution a {
+.maplibregl-ctrl-attrib a {
   color: var(--ink) !important;
+}
+
+.origin-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #f4fffb;
+  border-radius: 999px;
+  background: #0c6b5c;
+  box-shadow: 0 0 0 6px color-mix(in srgb, #0c6b5c 28%, transparent);
 }
 
 .price-marker-icon {
   background: transparent;
   border: none;
+}
+
+button.price-marker,
+button.reposta-cluster {
+  padding: 0;
+  cursor: pointer;
 }
 
 .price-marker {
@@ -152,6 +167,9 @@ select {
 .reposta-cluster {
   display: grid;
   place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-contrast);
