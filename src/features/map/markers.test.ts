@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RankedStation } from '../../utils/ranking'
-import { clusterHtml, markerHtml, markerLabel } from './markers'
+import { clusterHtml, clusterLabel, markerHtml, markerLabel } from './markers'
 
 const item = {
   station: { id: 1, brand: 'Repsol' },
@@ -22,6 +22,7 @@ describe('marcadores del mapa', () => {
   })
 
   it('resume un grupo con su precio más barato', () => {
-    expect(clusterHtml('1,399 €', 4)).toContain('aria-label="4 gasolineras, desde 1,399 €"')
+    expect(clusterHtml('1,399 €', 4)).toContain('1,399 €')
+    expect(clusterLabel('1,399 €', 4)).toBe('4 gasolineras, desde 1,399 €. Acercar')
   })
 })

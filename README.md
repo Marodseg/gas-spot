@@ -22,13 +22,13 @@ Abres la web, eliges el combustible, ves el mapa y la lista, y sales hacia la es
 - **Móvil:** el mapa ocupa toda la pantalla. Arriba flotan la búsqueda (con el botón de ubicación dentro) y los combustibles. Los resultados viven en un panel inferior con tres posiciones —recogido, medio y completo— que se arrastra, se lanza con un gesto o se cambia tocando el asa. Respeta las safe areas del iPhone.
 - **Escritorio (≥ 768 px):** mapa a la izquierda y panel de 380–420 px a la derecha.
 - **Mapa ↔ lista:** tocar un marcador o una tarjeta selecciona la estación en los dos sitios, abre su ficha y desplaza el mapa lo justo para que el marcador quede visible fuera de los paneles. “Buscar en esta zona” aparece solo cuando mueves tú el mapa. Escape cierra la ficha, la comparación y los ajustes.
-- **Marcadores:** HTML propio (`L.divIcon`) con el precio, una marca de nivel y un pie que apunta a la coordenada exacta. Estados: barato, medio, caro, recomendado, cerrado y seleccionado. Los grupos muestran el precio más barato que contienen. No hay imágenes, así que no dependen de rutas de assets ni del base path de GitHub Pages.
+- **Marcadores:** HTML propio (marcadores de MapLibre) con el precio, una marca de nivel y un pie que apunta a la coordenada exacta. Estados: barato, medio, caro, recomendado, cerrado y seleccionado. Los grupos (agrupación nativa de MapLibre) muestran el precio más barato que contienen y se abren al tocarlos. El mapa base es el estilo Positron de OpenFreeMap en claro y Dark en oscuro: discreto, para que el color lo pongan los precios. No hay imágenes, así que no dependen de rutas de assets ni del base path de GitHub Pages.
 - **Sistema de diseño:** tokens en `src/index.css` (colores claro/oscuro, cuatro radios, tres elevaciones, seis tamaños de texto) y componentes en `src/components/ui`: `Button`, `Chip`/`ChipSelect`, `Price`, `BandBadge`, `StateMessage` y `BottomSheet`. Las animaciones duran 150–260 ms y respetan `prefers-reduced-motion`.
 - **Estados:** cada estado vacío o de error explica qué pasa, qué puedes hacer y ofrece la acción. Los errores de la API se traducen a mensajes útiles; el detalle técnico (estado HTTP, mensaje de Precioil) queda en “Detalles técnicos”.
 
 ## Stack
 
-React, TypeScript estricto, Vite, Tailwind CSS, Leaflet con teselas Esri Canvas (gris claro y oscuro, sin clave), Lucide, Zustand y Zod. Los tests usan Vitest y Testing Library.
+React, TypeScript estricto, Vite, Tailwind CSS, MapLibre y teselas de [OpenFreeMap](https://openfreemap.org/) (OpenStreetMap, sin clave), Lucide, Zustand y Zod. Los tests usan Vitest y Testing Library.
 
 No hay backend propio. En producción es un sitio estático.
 
@@ -124,7 +124,7 @@ La última búsqueda, el combustible y los ajustes de estimación se guardan en 
 - La API consultada no devuelve servicios de la estación (tienda, lavado). Si en el futuro llega un campo `servicios`, la ficha lo muestra.
 - El horario se interpreta en Europa/Madrid. Si el texto no sigue el formato `L-V: 07:30-22:00`, el estado queda como no confirmado y el filtro “Abiertas” no la oculta.
 - “Abierta ahora” y el ahorro del desvío son ayudas, no datos oficiales.
-- Las teselas de Esri y Photon son servicios gratuitos con políticas de uso. Un tráfico muy alto puede exigir otro proveedor de mapas. Las teselas de CARTO dejaron de servirse sin API key (devuelven una marca de agua) y por eso se sustituyeron.
+- El mapa usa OpenFreeMap, sin clave de Google Maps ni de CARTO (las teselas de CARTO dejaron de servirse sin API key y devolvían una marca de agua). Photon sigue siendo un servicio gratuito con política de uso. Un tráfico muy alto puede exigir otro proveedor.
 - La browser key es visible para quien descarga la web. Su única protección es la restricción de origin en Precioil.
 
 ## Roadmap

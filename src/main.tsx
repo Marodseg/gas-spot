@@ -5,8 +5,6 @@ import '@fontsource/outfit/400.css'
 import '@fontsource/outfit/500.css'
 import '@fontsource/outfit/600.css'
 import '@fontsource/outfit/700.css'
-import 'leaflet/dist/leaflet.css'
-import 'leaflet.markercluster/dist/MarkerCluster.css'
 import { App } from './app/App'
 import './index.css'
 

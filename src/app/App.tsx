@@ -1,7 +1,8 @@
-import { Fuel, LoaderCircle, Search } from 'lucide-react'
+import { Fuel, LoaderCircle, MapPinOff, RotateCcw, Search } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BottomSheet } from '../components/ui/BottomSheet'
 import { Button } from '../components/ui/Button'
+import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import {
   BrowseControls,
   FuelSelector,
@@ -70,20 +71,22 @@ export function App() {
   )
 
   const map = (
-    <Suspense fallback={<MapFallback />}>
-      <StationMap
-        origin={origin}
-        stations={visible.ranked}
-        selectedId={selectedId}
-        radiusKm={radiusKm}
-        dark={dark}
-        insets={insets}
-        insetsReady={desktop || (topBarHeight > 0 && sheetHeight > 0)}
-        showZoom={desktop}
-        onSelect={selectStation}
-        onSearchHere={setSearchHere}
-      />
-    </Suspense>
+    <ErrorBoundary fallback={<MapUnavailable />}>
+      <Suspense fallback={<MapFallback />}>
+        <StationMap
+          origin={origin}
+          stations={visible.ranked}
+          selectedId={selectedId}
+          radiusKm={radiusKm}
+          dark={dark}
+          insets={insets}
+          insetsReady={desktop || (topBarHeight > 0 && sheetHeight > 0)}
+          showZoom={desktop}
+          onSelect={selectStation}
+          onSearchHere={setSearchHere}
+        />
+      </Suspense>
+    </ErrorBoundary>
   )
 
   const searchHereButton = searchHere ? (
@@ -215,6 +218,20 @@ function SkipLink() {
     >
       Saltar al listado
     </a>
+  )
+}
+
+/** The map chunk failed to load; the list keeps working, so the map area only offers a reload. */
+function MapUnavailable() {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[var(--map-bg)] px-6 pb-[45dvh] text-center md:pb-0" role="alert">
+      <MapPinOff aria-hidden className="size-6 text-muted" />
+      <p className="text-body-sm text-muted">No hemos podido cargar el mapa. El listado sigue disponible.</p>
+      <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>
+        <RotateCcw aria-hidden className="size-4" />
+        Recargar
+      </Button>
+    </div>
   )
 }
 
