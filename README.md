@@ -13,6 +13,7 @@ Abres la web, eliges el combustible, ves el mapa y la lista, y sales hacia la es
 - Indica cuándo se actualizó cada precio y atenúa los que tienen más de 24 horas.
 - Ficha de la estación con el histórico de 7, 30 y 90 días integrado, y comparación de hasta tres estaciones.
 - Precio medio provincial cuando Precioil lo publica.
+- Modo **En ruta**: eliges origen y destino y ves las gasolineras que tienes por el camino, ordenables por punto kilométrico, con el desvío estimado y la recomendación adaptada. “Cómo llegar” abre el trayecto completo con la gasolinera como parada.
 - Geolocalización opcional y búsqueda de ciudad, calle o código postal en España.
 - Tema claro, oscuro o según el sistema.
 - Instalable como PWA. Los precios no se guardan en la caché del service worker.
@@ -91,12 +92,22 @@ La documentación viva está en el [Swagger](https://api.precioil.es/api-docs/).
 | Ficha | `GET /estaciones/detalles/{idEstacion}` |
 | Histórico | `GET /estaciones/historico/{idEstacion}?fechaInicio&fechaFin` |
 | Provincias y media | `GET /provincias`, `GET /precios/medios/provincia/{idProvincia}` |
+| Rutas | `POST /v1/rutas/recorridos` (hasta 3 alternativas con su trazado) |
 
 Los precios del radio llegan como número (`Diesel`, `Gasolina95`, `Gasolina98`, `GLP`…). En el detalle, los mismos campos pueden llegar como texto. El histórico devuelve eventos con `idFuelType`, no una serie diaria: la gráfica reconstruye el precio de cada día.
 
 Hoy algunos endpoints responden sin clave. Una clave inválida responde `401`. No cuentes con el acceso anónimo: en GitHub Pages configura la browser key. CORS permite el origen del navegador y la cabecera `X-API-Key`. Si la clave está restringida por origin, Precioil la rechaza fuera de ese dominio aunque CORS sea abierto: responde `403 api_key_origin_not_allowed`, la lista queda vacía y el mapa sin marcadores. Es lo primero que hay que revisar si en GitHub Pages no aparecen gasolineras (el detalle técnico se ve en “Detalles técnicos” del mensaje de error). El origin cuenta con el puerto: `vite preview` en otro puerto que no sea 4179 también recibe 403.
 
 La búsqueda de direcciones usa [Photon](https://photon.komoot.io/), el geocodificador público de OpenStreetMap mantenido por Komoot. No hay geocodificador propio. Las consultas van con debounce, límite de resultados y caché. La ubicación solo sale del navegador hacia Precioil (para el radio) y, si ya hay un origen, hacia Photon como sesgo de la búsqueda.
+
+## Modo En ruta
+
+1. `POST /v1/rutas/recorridos` devuelve hasta tres rutas por carretera con su trazado, que se simplifica (~25 m) para dibujarlo y medir sobre él.
+2. Las gasolineras salen de búsquedas por radio repartidas a lo largo del trazado (como mucho 60, de 4 en 4). Esas búsquedas no gastan puntos de rutas.
+3. Se quedan las que están a ≤ 3 km de la ruta. Cada una lleva su kilómetro de ruta y un desvío estimado: ir y volver a la ruta, en línea recta × 1,3. Por debajo de 150 m se considera “en la ruta”.
+4. Ese desvío ocupa el lugar de la distancia, así que la ordenación, la estimación de ahorro y la recomendación son las mismas que en el modo cercano. La referencia pasa a ser la gasolinera con menos desvío. El ajuste “Vuelvo al punto de partida” no se aplica, porque el desvío ya cuenta la vuelta a la ruta.
+
+**Cupo.** Las rutas consumen puntos de un grupo propio de Precioil: cada cálculo de `recorridos` cuesta 5 de un límite diario que, en el plan actual, es de 140 puntos por cuenta (todas las claves y todos los usuarios juntos; se renueva a las 00:00 UTC). Por eso cada resultado se guarda 6 horas en `localStorage` y reabrir o recargar un viaje no gasta puntos. Cuando se agota, la app lo explica y ofrece buscar cerca. No se usa `POST /v1/rutas/repostaje` (30 puntos por llamada): con este cupo solo daría para unas cuatro búsquedas al día.
 
 ## GitHub Pages
 
@@ -115,7 +126,7 @@ El base path del build es `/` si el repositorio se llama `*.github.io` y `/nombr
 
 No hay cuentas, cookies propias ni analítica externa. `analytics.track` solo avisa a suscriptores en memoria, para poder conectar más adelante una herramienta como Plausible sin reescribir la interfaz.
 
-La última búsqueda, el combustible y los ajustes de estimación se guardan en `localStorage` de este navegador. Si la última búsqueda fue “Tu ubicación” y el permiso ya está concedido, al abrir se vuelve a pedir la posición para no enseñar gasolineras de otro sitio; sin permiso no se pide nada al cargar.
+La última búsqueda, el combustible y los ajustes de estimación se guardan en `localStorage` de este navegador. Si la última búsqueda fue “Tu ubicación” y el permiso ya está concedido, al abrir se vuelve a pedir la posición para no enseñar gasolineras de otro sitio; sin permiso no se pide nada al cargar. En modo ruta, el origen y el destino se envían a Precioil para calcular el trayecto y se guardan en este navegador junto con las rutas calculadas (6 horas).
 
 ## Limitaciones
 
@@ -126,7 +137,9 @@ La última búsqueda, el combustible y los ajustes de estimación se guardan en 
 - “Abierta ahora” y el ahorro del desvío son ayudas, no datos oficiales.
 - El mapa usa OpenFreeMap, sin clave de Google Maps ni de CARTO (las teselas de CARTO dejaron de servirse sin API key y devolvían una marca de agua). Photon sigue siendo un servicio gratuito con política de uso. Un tráfico muy alto puede exigir otro proveedor.
 - La browser key es visible para quien descarga la web. Su única protección es la restricción de origin en Precioil.
+- En ruta, el desvío es una estimación geométrica, no un cálculo por carretera, y no distingue el sentido de la marcha en autovías.
+- “Cómo llegar” con parada usa Google Maps en todas las plataformas: los enlaces de Apple Maps no admiten paradas intermedias.
 
 ## Roadmap
 
-La estructura deja sitio, sin implementarlos aún, para favoritos, alertas de precio, rutas, ahorro mensual, comparación de marcas, compartir una estación y un proveedor de analítica respetuoso.
+La estructura deja sitio, sin implementarlos aún, para favoritos, alertas de precio, plan de paradas según autonomía (`/v1/rutas/repostaje`, si el cupo lo permite), ahorro mensual, comparación de marcas, compartir una estación y un proveedor de analítica respetuoso.

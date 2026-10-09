@@ -32,6 +32,7 @@ export function useVisibleStations(): VisibleStations {
   const liters = usePreferences((state) => state.liters)
   const consumptionLitersPer100Km = usePreferences((state) => state.consumptionLitersPer100Km)
   const roundTrip = usePreferences((state) => state.roundTrip)
+  const mode = usePreferences((state) => state.mode)
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -46,7 +47,8 @@ export function useVisibleStations(): VisibleStations {
 
   return useMemo(() => {
     const fuel = findFuel(fuelId)
-    const assumptions = { liters, consumptionLitersPer100Km, roundTrip }
+    // Along a route the detour already counts leaving and rejoining it; doubling it again would be wrong.
+    const assumptions = { liters, consumptionLitersPer100Km, roundTrip: mode === 'route' ? false : roundTrip }
     const offered = stationsWithFuel(stations, fuel)
     const filtered = offered.filter((station) => {
       const price = station.prices[fuel.field]
@@ -84,12 +86,14 @@ export function useVisibleStations(): VisibleStations {
         ranked.map((item) => item.station),
         fuel.label,
         liters,
+        mode === 'route',
       ),
       assumptions,
       now,
     }
   }, [
     stations,
+    mode,
     availableFuelIds,
     fuelId,
     sort,

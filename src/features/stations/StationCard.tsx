@@ -2,10 +2,9 @@ import { BadgeCheck, Navigation } from 'lucide-react'
 import { memo } from 'react'
 import { BandBadge } from '../../components/ui/BandBadge'
 import { Price } from '../../components/ui/Price'
-import { analytics } from '../../services/analytics'
 import { describeUpdate } from '../../utils/datetime'
-import { formatDistance } from '../../utils/format'
-import { openDirections } from '../../utils/navigation'
+import { formatDetour, formatDistance } from '../../utils/format'
+import { goToStation } from './directions'
 import type { RankedStation } from '../../utils/ranking'
 
 interface StationCardProps {
@@ -52,10 +51,17 @@ export const StationCard = memo(function StationCard({ item, selected, bestReaso
             <Price value={item.price} className={stale ? 'opacity-70' : ''} />
             <p className="mt-0.5 truncate text-title font-semibold">{station.brand}</p>
           </div>
-          <div className="shrink-0 pt-1 text-right">
-            <p className="tabular text-title font-semibold">{formatDistance(station.distanceKm)}</p>
-            {place ? <p className="max-w-32 truncate text-body-sm text-muted">{place}</p> : null}
-          </div>
+          {station.routeKm === undefined ? (
+            <div className="shrink-0 pt-1 text-right">
+              <p className="tabular text-title font-semibold">{formatDistance(station.distanceKm)}</p>
+              {place ? <p className="max-w-32 truncate text-body-sm text-muted">{place}</p> : null}
+            </div>
+          ) : (
+            <div className="shrink-0 pt-1 text-right">
+              <p className="tabular text-title font-semibold">km {Math.round(station.routeKm)}</p>
+              <p className="tabular text-body-sm text-muted">{formatDetour(station.distanceKm)}</p>
+            </div>
+          )}
         </div>
         <div className="mt-3 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 pr-12">
           <BandBadge band={item.band} label={item.bandLabel} />
@@ -72,10 +78,7 @@ export const StationCard = memo(function StationCard({ item, selected, bestReaso
         aria-label={`Cómo llegar a ${station.brand}`}
         title="Cómo llegar"
         className="absolute right-3 bottom-3 grid size-11 place-items-center rounded-full bg-accent-soft text-accent transition-colors hover:bg-accent hover:text-accent-contrast"
-        onClick={() => {
-          analytics.track('directions_open', { stationId: station.id, from: 'card' })
-          openDirections(station.latitude, station.longitude)
-        }}
+        onClick={() => goToStation(station, 'card')}
       >
         <Navigation aria-hidden className="size-4.5" />
       </button>

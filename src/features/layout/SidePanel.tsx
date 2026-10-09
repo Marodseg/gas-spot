@@ -1,13 +1,16 @@
-import { CircleAlert, Fuel, GitCompareArrows, LocateFixed, MapPin, MapPinOff, Search, SearchX, Settings, X } from 'lucide-react'
+import { CircleAlert, Fuel, GitCompareArrows, LocateFixed, MapPin, MapPinOff, Route, Search, SearchX, Settings, X } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, type RefObject } from 'react'
 import { Button } from '../../components/ui/Button'
 import { Price } from '../../components/ui/Price'
 import { StateMessage } from '../../components/ui/StateMessage'
 import { findFuel } from '../../config/fuels'
+import { formatDistance } from '../../utils/format'
 import type { VisibleStations } from '../../hooks/useVisibleStations'
 import { usePreferences } from '../../stores/preferences'
 import { useSession } from '../../stores/session'
-import { requestLocation } from '../search/choose-place'
+import { chooseRouteFrom, requestLocation, switchMode } from '../search/choose-place'
+import { RoutePicker } from '../route/RoutePicker'
+import { CORRIDOR_KM } from '../../api/precioil/corridor'
 import { FilterBar } from '../stations/FilterBar'
 import { StationCard, StationCardSkeleton } from '../stations/StationCard'
 import { StationDetail } from '../stations/StationDetail'
@@ -55,23 +58,38 @@ export function ResultsSummary({ visible }: { visible: VisibleStations }) {
   const status = useSession((state) => state.status)
   const fuelId = usePreferences((state) => state.fuelId)
   const radiusKm = usePreferences((state) => state.radiusKm)
+  const mode = usePreferences((state) => state.mode)
+  const route = useSession((state) => state.routes[state.routeIndex] ?? null)
+  const progress = useSession((state) => state.corridorProgress)
   const fuel = findFuel(fuelId)
   const cheapest = visible.ranked.reduce<number | null>((min, item) => (min === null || item.price < min ? item.price : min), null)
   const count = visible.ranked.length
+  const alongRoute = mode === 'route'
 
-  // Without a place or with a failed load the body already explains the state.
-  if (!origin || status === 'error') return null
+  // Without a place (or a route) or with a failed load the body already explains the state.
+  if (!origin || status === 'error' || (alongRoute && !route)) return null
+  const counted = `${count} ${count === 1 ? 'gasolinera' : 'gasolineras'}${alongRoute ? ' en el camino' : ''}`
   return (
     <div className="flex items-end justify-between gap-3" aria-live="polite">
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="truncate text-caption font-semibold tracking-wide text-muted uppercase">
-          {fuel.label} · {radiusKm} km
+          {fuel.label} · {alongRoute && route ? `Ruta de ${formatDistance(route.distanceKm)}` : `${radiusKm} km`}
         </p>
         <p className="text-title font-semibold">
           {status === 'loading' && count === 0
-            ? 'Buscando gasolineras…'
-            : `${count} ${count === 1 ? 'gasolinera' : 'gasolineras'}`}
+            ? alongRoute && progress
+              ? `Buscando en la ruta · ${progress.done}/${progress.total}`
+              : 'Buscando gasolineras…'
+            : counted}
         </p>
+        {alongRoute && progress ? (
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-line" aria-hidden>
+            <div
+              className="h-full rounded-full bg-accent transition-[width] duration-200"
+              style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }}
+            />
+          </div>
+        ) : null}
       </div>
       {cheapest !== null ? (
         <p className="shrink-0 text-right text-body-sm text-muted">
@@ -173,11 +191,60 @@ function Browse({ visible }: { visible: VisibleStations }) {
   const fuel = findFuel(fuelId)
   const select = useCallback((id: number) => useSession.getState().selectStation(id), [])
   const loading = status === 'loading'
+  const mode = usePreferences((state) => state.mode)
+  const routeTo = usePreferences((state) => state.routeTo)
+  const routeStatus = useSession((state) => state.routeStatus)
+  const routeError = useSession((state) => state.routeError)
+  const routeCount = useSession((state) => state.routes.length)
+  const corridorGaps = useSession((state) => state.corridorGaps)
+  const alongRoute = mode === 'route'
+
+  if (alongRoute && (!origin || !routeTo)) {
+    return (
+      <StateMessage
+        icon={Route}
+        title="Planifica tu ruta"
+        description="Elige origen y destino y te enseñamos dónde repostar por el camino."
+      >
+        {origin ? null : (
+          <Button loading={locating} onClick={() => void requestLocation(chooseRouteFrom)}>
+            {locating ? null : <LocateFixed aria-hidden className="size-4" />}
+            Salir desde mi ubicación
+          </Button>
+        )}
+        <Button variant={origin ? 'primary' : 'secondary'} onClick={() => focusSearch(origin ? 'route-to' : 'route-from')}>
+          <Search aria-hidden className="size-4" />
+          {origin ? 'Elegir destino' : 'Elegir origen'}
+        </Button>
+      </StateMessage>
+    )
+  }
+  if (alongRoute && routeStatus === 'error' && routeError) {
+    return (
+      <StateMessage
+        icon={CircleAlert}
+        tone="error"
+        title={routeError.title}
+        description={routeError.message}
+        detail={routeError.detail}
+      >
+        {routeError.code === 'rate_limit' ? null : (
+          <Button variant="secondary" onClick={() => useSession.getState().retry()}>
+            Reintentar
+          </Button>
+        )}
+        <Button variant={routeError.code === 'rate_limit' ? 'primary' : 'ghost'} onClick={() => switchMode('nearby')}>
+          Buscar cerca
+        </Button>
+      </StateMessage>
+    )
+  }
+  if (alongRoute && routeStatus === 'loading') return <ListSkeleton count={4} />
 
   if (!origin) {
     return locateError ? (
       <StateMessage icon={MapPinOff} title={locateError.title} description={locateError.message}>
-        <Button onClick={focusSearch}>
+        <Button onClick={() => focusSearch()}>
           <Search aria-hidden className="size-4" />
           Buscar un lugar
         </Button>
@@ -195,7 +262,7 @@ function Browse({ visible }: { visible: VisibleStations }) {
           {locating ? null : <LocateFixed aria-hidden className="size-4" />}
           {locating ? 'Buscando tu ubicación…' : 'Usar mi ubicación'}
         </Button>
-        <Button variant="secondary" onClick={focusSearch}>
+        <Button variant="secondary" onClick={() => focusSearch()}>
           Buscar un lugar
         </Button>
       </StateMessage>
@@ -224,6 +291,22 @@ function Browse({ visible }: { visible: VisibleStations }) {
         </div>
       ) : null}
 
+      {alongRoute && corridorGaps > 0 && !loading ? (
+        <div role="status" className="flex items-start gap-3 rounded-md bg-raised p-3 text-body-sm">
+          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-muted" />
+          <p className="flex-1 text-muted">
+            Algunos tramos de la ruta no se han podido consultar. Puede faltar alguna gasolinera.
+          </p>
+          <button
+            type="button"
+            className="-my-1 shrink-0 rounded-full px-2 py-1 font-semibold text-accent hover:bg-accent-soft"
+            onClick={() => useSession.getState().retry()}
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : null}
+
       {compareIds.length > 0 ? (
         <Button variant="secondary" size="sm" className="w-full" onClick={() => useSession.getState().setPanel('compare')}>
           <GitCompareArrows aria-hidden className="size-4" />
@@ -241,7 +324,27 @@ function Browse({ visible }: { visible: VisibleStations }) {
 
       {loading && visible.ranked.length === 0 ? <ListSkeleton count={5} /> : null}
 
-      {!loading && status !== 'error' && stationCount === 0 ? (
+      {alongRoute && !loading && status !== 'error' && stationCount === 0 ? (
+        <StateMessage
+          icon={MapPinOff}
+          title="Sin gasolineras en el camino"
+          description={`No hay gasolineras a menos de ${CORRIDOR_KM} km de esta ruta.`}
+        >
+          {routeCount > 1 ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const { routeIndex } = useSession.getState()
+                useSession.getState().selectRoute((routeIndex + 1) % routeCount)
+              }}
+            >
+              Probar otra ruta
+            </Button>
+          ) : null}
+        </StateMessage>
+      ) : null}
+
+      {!alongRoute && !loading && status !== 'error' && stationCount === 0 ? (
         <StateMessage
           icon={MapPinOff}
           title={`Sin gasolineras a ${radiusKm} km`}
@@ -252,7 +355,7 @@ function Browse({ visible }: { visible: VisibleStations }) {
               Ampliar a {nextRadius} km
             </Button>
           ) : (
-            <Button variant="secondary" onClick={focusSearch}>
+            <Button variant="secondary" onClick={() => focusSearch()}>
               Buscar otra zona
             </Button>
           )}
@@ -260,13 +363,17 @@ function Browse({ visible }: { visible: VisibleStations }) {
       ) : null}
 
       {!loading && stationCount > 0 && visible.withFuelCount === 0 ? (
-        <StateMessage icon={Fuel} title={`Nadie vende ${fuel.label} aquí`} description="Cambia de combustible o amplía la distancia.">
+        <StateMessage
+          icon={Fuel}
+          title={`Nadie vende ${fuel.label} ${alongRoute ? 'en el camino' : 'aquí'}`}
+          description={alongRoute ? 'Prueba con otro combustible.' : 'Cambia de combustible o amplía la distancia.'}
+        >
           {otherFuel !== undefined ? (
             <Button variant="secondary" onClick={() => selectFuel(otherFuel)}>
               Ver {findFuel(otherFuel).label}
             </Button>
           ) : null}
-          {nextRadius ? (
+          {nextRadius && !alongRoute ? (
             <Button variant="secondary" onClick={() => usePreferences.getState().setRadiusKm(nextRadius)}>
               Ampliar a {nextRadius} km
             </Button>
@@ -314,8 +421,15 @@ function Browse({ visible }: { visible: VisibleStations }) {
 /** Filters row, shown only while browsing the list. */
 export function BrowseControls({ visible }: { visible: VisibleStations }) {
   const origin = useSession((state) => state.origin)
-  if (!origin) return null
-  return <FilterBar brands={visible.brands} activeFilters={visible.activeFilters} />
+  const mode = usePreferences((state) => state.mode)
+  const hasRoute = useSession((state) => state.routes.length > 0)
+  if (!origin || (mode === 'route' && !hasRoute)) return null
+  return (
+    <>
+      {mode === 'route' ? <RoutePicker /> : null}
+      <FilterBar brands={visible.brands} activeFilters={visible.activeFilters} alongRoute={mode === 'route'} />
+    </>
+  )
 }
 
 function ListSkeleton({ count }: { count: number }) {
@@ -328,7 +442,8 @@ function ListSkeleton({ count }: { count: number }) {
   )
 }
 
-function focusSearch() {
+function focusSearch(name?: string) {
   if (useSession.getState().sheet === 'full') useSession.getState().setSheet('half')
-  document.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus()
+  const selector = name ? `input[name="${name}"]` : 'input[role="combobox"]'
+  document.querySelector<HTMLInputElement>(selector)?.focus()
 }

@@ -13,10 +13,12 @@ export function useNearbyStations(): void {
   const radiusKm = usePreferences((state) => state.radiusKm)
   const fuelId = usePreferences((state) => state.fuelId)
   const retryToken = useSession((state) => state.retryToken)
+  const mode = usePreferences((state) => state.mode)
   const previousOrigin = useRef('')
 
   useEffect(() => {
-    if (!origin) return undefined
+    // In route mode the stations come from useRouteStations.
+    if (!origin || mode !== 'nearby') return undefined
     const originKey = `${origin.latitude.toFixed(3)}:${origin.longitude.toFixed(3)}`
     const clearStations = previousOrigin.current !== originKey
     previousOrigin.current = originKey
@@ -40,7 +42,7 @@ export function useNearbyStations(): void {
       })
 
     return () => controller.abort()
-  }, [origin, radiusKm, retryToken])
+  }, [origin, radiusKm, retryToken, mode])
 
   useEffect(() => {
     const province = dominantProvince(stations)

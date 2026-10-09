@@ -85,7 +85,11 @@ function compareRanked(left: RankedStation, right: RankedStation, sort: SortMode
     case 'price':
       return left.price - right.price || left.station.distanceKm - right.station.distanceKm
     case 'distance':
-      return left.station.distanceKm - right.station.distanceKm || left.price - right.price
+      // Along a route, "closest" means "next on the way": order by kilometre of the route.
+      return (
+        (left.station.routeKm ?? left.station.distanceKm) - (right.station.routeKm ?? right.station.distanceKm) ||
+        left.price - right.price
+      )
     case 'recommended': {
       const leftNet = left.cost?.netCostEur ?? Number.POSITIVE_INFINITY
       const rightNet = right.cost?.netCostEur ?? Number.POSITIVE_INFINITY

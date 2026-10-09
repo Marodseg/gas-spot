@@ -24,16 +24,31 @@ export function buildPrecioilUrl(baseUrl: string, path: string, query?: Precioil
   return url
 }
 
-export async function precioilGet(path: string, query?: PrecioilQuery, signal?: AbortSignal): Promise<unknown> {
+export function precioilGet(path: string, query?: PrecioilQuery, signal?: AbortSignal): Promise<unknown> {
+  return precioilRequest('GET', path, { query, signal })
+}
+
+export function precioilPost(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
+  return precioilRequest('POST', path, { body, signal })
+}
+
+async function precioilRequest(
+  method: 'GET' | 'POST',
+  path: string,
+  options: { query?: PrecioilQuery; body?: unknown; signal?: AbortSignal },
+): Promise<unknown> {
   const config = readConfig()
-  const url = buildPrecioilUrl(config.baseUrl, path, query)
+  const url = buildPrecioilUrl(config.baseUrl, path, options.query)
   const timeout = AbortSignal.timeout(TIMEOUT_MS)
-  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+  const requestSignal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+  const headers = precioilHeaders(config.apiKey)
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json')
   let response: Response
   try {
     response = await fetch(url, {
-      method: 'GET',
-      headers: precioilHeaders(config.apiKey),
+      method,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: requestSignal,
     })
   } catch (error) {

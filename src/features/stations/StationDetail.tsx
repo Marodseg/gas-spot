@@ -5,13 +5,12 @@ import { BandBadge } from '../../components/ui/BandBadge'
 import { Button } from '../../components/ui/Button'
 import { Price } from '../../components/ui/Price'
 import { FUELS, findFuel } from '../../config/fuels'
-import { analytics } from '../../services/analytics'
 import { useSession } from '../../stores/session'
 import { selectFuel } from '../fuel-selector/select-fuel'
 import type { ProvinceAverage, Station } from '../../types/domain'
 import { describeUpdate, formatDateTime } from '../../utils/datetime'
-import { formatDistance, formatMoney, formatPriceDelta, formatPricePerLiter } from '../../utils/format'
-import { openDirections } from '../../utils/navigation'
+import { formatDetour, formatDistance, formatMoney, formatPriceDelta, formatPricePerLiter } from '../../utils/format'
+import { goToStation } from './directions'
 import { openingLabel, openingStatus } from '../../utils/opening-hours'
 import type { RankedStation } from '../../utils/ranking'
 
@@ -62,7 +61,10 @@ export function StationDetail({
     return () => controller.abort()
   }, [station.id, origin])
 
-  const current = fresh?.id === station.id ? { ...fresh, distanceKm: station.distanceKm } : station
+  // The fresh record keeps the list's own distance (and, on a route, its kilometre and detour).
+  const current = fresh?.id === station.id ? { ...fresh, distanceKm: station.distanceKm, routeKm: station.routeKm } : station
+  const alongRoute = current.routeKm !== undefined
+  const reference = alongRoute ? 'la de menor desvío' : 'la más cercana'
   const selectedPrice = current.prices[fuel.field]
   const update = describeUpdate(current.updatedAt, now)
   const updatedExact = current.updatedAt ? formatDateTime(current.updatedAt) : null
@@ -97,7 +99,11 @@ export function StationDetail({
           {item ? <BandBadge band={item.band} label={item.bandLabel} /> : null}
         </div>
         <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-body-sm text-muted">
-          <span className="tabular font-semibold text-ink">{formatDistance(current.distanceKm)}</span>
+          <span className="tabular font-semibold text-ink">
+            {current.routeKm === undefined
+              ? formatDistance(current.distanceKm)
+              : `km ${Math.round(current.routeKm)} · ${formatDetour(current.distanceKm)}`}
+          </span>
           {uniquePlace ? <span>· {uniquePlace}</span> : null}
         </p>
         <p
@@ -107,7 +113,7 @@ export function StationDetail({
           <Clock aria-hidden className="size-3.5" />
           {update ? update.label : 'Sin fecha de actualización'}
         </p>
-        {delta !== null && provinceName ? (
+        {delta !== null && provinceName && !alongRoute ? (
           <p className="mt-1 text-caption text-muted">
             {formatPriceDelta(delta)} que la media de {provinceName}
           </p>
@@ -118,10 +124,7 @@ export function StationDetail({
         <Button
           size="lg"
           className="flex-1"
-          onClick={() => {
-            analytics.track('directions_open', { stationId: current.id, from: 'detail' })
-            openDirections(current.latitude, current.longitude)
-          }}
+          onClick={() => goToStation(current, 'detail')}
         >
           <Navigation aria-hidden className="size-4.5" />
           Cómo llegar
@@ -147,8 +150,8 @@ export function StationDetail({
           {cost.netSavingVsBaselineEur !== null && Math.abs(cost.netSavingVsBaselineEur) >= 0.01 ? (
             <p className={`mt-1 text-body-sm font-medium ${cost.netSavingVsBaselineEur > 0 ? 'text-cheap' : 'text-muted'}`}>
               {cost.netSavingVsBaselineEur > 0
-                ? `Ahorras ${formatMoney(cost.netSavingVsBaselineEur)} frente a la más cercana`
-                : `${formatMoney(-cost.netSavingVsBaselineEur)} más que la más cercana`}
+                ? `Ahorras ${formatMoney(cost.netSavingVsBaselineEur)} frente a ${reference}`
+                : `${formatMoney(-cost.netSavingVsBaselineEur)} más que ${reference}`}
             </p>
           ) : null}
           <p className="mt-2 text-caption text-subtle">

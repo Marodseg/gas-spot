@@ -1,5 +1,5 @@
 import { LoaderCircle, LocateFixed, MapPin, Search, X } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { searchPlaces } from '../../api/geocode'
 import { useSession } from '../../stores/session'
 import type { Place } from '../../types/domain'
@@ -10,10 +10,35 @@ const MIN_QUERY = 2
 interface PlaceSearchProps {
   /** Floating over the map (mobile) gets an elevated surface. */
   floating?: boolean
+  /** Part of a combined card (route origin/destination): no border or shadow of its own. */
+  bare?: boolean
+  /** Chosen place shown when not typing. Defaults to the nearby-search origin. */
+  value?: Place | null
+  /** What choosing a place does. Defaults to searching around it. */
+  onChoose?: (place: Place) => void
+  /** Accessible name of the field. */
+  label?: string
+  placeholder?: string
+  icon?: ReactNode
+  /** Offers "use my location" when the field is empty. */
+  locate?: boolean
+  /** Lets other parts of the UI focus this field. */
+  name?: string
 }
 
-export function PlaceSearch({ floating = false }: PlaceSearchProps) {
-  const origin = useSession((state) => state.origin)
+export function PlaceSearch({
+  floating = false,
+  bare = false,
+  value,
+  onChoose = choosePlace,
+  label = 'Buscar ciudad, dirección o código postal',
+  placeholder = 'Buscar ciudad o dirección',
+  icon,
+  locate = true,
+  name,
+}: PlaceSearchProps) {
+  const sessionOrigin = useSession((state) => state.origin)
+  const origin = value === undefined ? sessionOrigin : value
   const locating = useSession((state) => state.locating)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -37,7 +62,7 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
   useEffect(() => {
     if (queryKey.length < MIN_QUERY) return undefined
     const controller = new AbortController()
-    void searchPlaces(queryKey, origin ?? undefined, controller.signal)
+    void searchPlaces(queryKey, sessionOrigin ?? undefined, controller.signal)
       .then((places) => {
         setActive(0)
         setResult({ query: queryKey, places, failed: false })
@@ -47,10 +72,10 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
         setResult({ query: queryKey, places: [], failed: true })
       })
     return () => controller.abort()
-  }, [queryKey, origin])
+  }, [queryKey, sessionOrigin])
 
   function select(place: Place) {
-    choosePlace(place)
+    onChoose(place)
     setQuery('')
     setOpen(false)
     inputRef.current?.blur()
@@ -59,21 +84,26 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
   return (
     <div className="relative">
       <label className="sr-only" htmlFor={`${listId}-input`}>
-        Buscar ciudad, dirección o código postal
+        {label}
       </label>
       <div
-        className={`flex h-12 items-center gap-2 rounded-full border bg-surface pr-1 pl-4 transition-shadow duration-150 focus-within:border-accent ${
-          floating ? 'border-transparent shadow-md' : 'border-line-strong'
+        className={`flex items-center gap-2 pr-1 transition-shadow duration-150 ${
+          bare
+            ? 'h-11 pl-3'
+            : `h-12 rounded-full border bg-surface pl-4 focus-within:border-accent ${
+                floating ? 'border-transparent shadow-md' : 'border-line-strong'
+              }`
         }`}
       >
         {searching ? (
           <LoaderCircle aria-hidden className="size-4.5 shrink-0 animate-spin text-muted" />
         ) : (
-          <Search aria-hidden className="size-4.5 shrink-0 text-muted" />
+          (icon ?? <Search aria-hidden className="size-4.5 shrink-0 text-muted" />)
         )}
         <input
           ref={inputRef}
           id={`${listId}-input`}
+          name={name}
           role="combobox"
           type="search"
           enterKeyHint="search"
@@ -83,7 +113,7 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
           aria-autocomplete="list"
           aria-activedescendant={showPanel && results[active] ? `${listId}-${active}` : undefined}
           value={query}
-          placeholder={origin ? origin.label : 'Buscar ciudad o dirección'}
+          placeholder={origin ? origin.label : placeholder}
           className={`h-full min-w-0 flex-1 bg-transparent text-body outline-none [&::-webkit-search-cancel-button]:hidden ${
             origin ? 'font-medium placeholder:text-ink' : 'placeholder:text-subtle'
           }`}
@@ -121,7 +151,7 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
           >
             <X aria-hidden className="size-4" />
           </button>
-        ) : (
+        ) : locate ? (
           <button
             type="button"
             aria-label={locating ? 'Buscando tu ubicación' : 'Usar mi ubicación'}
@@ -130,7 +160,7 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
             className={`grid size-10 shrink-0 place-items-center rounded-full hover:bg-ink/6 disabled:opacity-60 ${
               origin?.source === 'geolocation' ? 'text-accent' : 'text-muted'
             }`}
-            onClick={() => void requestLocation()}
+            onClick={() => void requestLocation(onChoose)}
           >
             {locating ? (
               <LoaderCircle aria-hidden className="size-4.5 animate-spin" />
@@ -138,7 +168,7 @@ export function PlaceSearch({ floating = false }: PlaceSearchProps) {
               <LocateFixed aria-hidden className="size-4.5" />
             )}
           </button>
-        )}
+        ) : null}
       </div>
       {showPanel ? (
         <div className="animate-fade-up absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-md border border-line bg-surface shadow-lg">

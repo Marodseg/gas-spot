@@ -14,6 +14,9 @@ import { choosePlace, requestLocation } from '../features/search/choose-place'
 import { PlaceSearch } from '../features/search/PlaceSearch'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNearbyStations } from '../hooks/useNearbyStations'
+import { useRouteStations } from '../hooks/useRouteStations'
+import { ModeSwitch } from '../features/route/ModeSwitch'
+import { RoutePlanner } from '../features/route/RoutePlanner'
 import { useTheme } from '../hooks/useTheme'
 import { useVisibleStations } from '../hooks/useVisibleStations'
 import { geolocationPermission } from '../services/geolocation'
@@ -25,6 +28,7 @@ const StationMap = lazy(() => import('../features/map/StationMap').then((module)
 export function App() {
   const { dark } = useTheme()
   useNearbyStations()
+  useRouteStations()
   const desktop = useMediaQuery('(min-width: 768px)')
   const origin = useSession((state) => state.origin)
   const selectedId = useSession((state) => state.selectedId)
@@ -33,6 +37,10 @@ export function App() {
   const sheet = useSession((state) => state.sheet)
   const panel = useSession((state) => state.panel)
   const radiusKm = usePreferences((state) => state.radiusKm)
+  const mode = usePreferences((state) => state.mode)
+  const routeTo = usePreferences((state) => state.routeTo)
+  const routes = useSession((state) => state.routes)
+  const routeIndex = useSession((state) => state.routeIndex)
   const visible = useVisibleStations()
   const scrollRef = useRef<HTMLDivElement>(null)
   const topBarRef = useRef<HTMLDivElement>(null)
@@ -44,10 +52,16 @@ export function App() {
     (point: { latitude: number; longitude: number } | null) => useSession.getState().setSearchHere(point),
     [],
   )
+  const selectRoute = useCallback((index: number) => useSession.getState().selectRoute(index), [])
   const setSnap = useCallback((snap: SheetSnap) => useSession.getState().setSheet(snap), [])
 
   useEffect(() => {
-    const saved = usePreferences.getState().lastPlace
+    const { lastPlace: saved, mode: savedMode, routeFrom } = usePreferences.getState()
+    // A trip in progress is restored as it was (its routes are cached, so this costs no route points).
+    if (savedMode === 'route') {
+      if (routeFrom) useSession.getState().setOrigin(routeFrom)
+      return
+    }
     if (saved) useSession.getState().setOrigin(saved)
     // A saved search stays; a saved "Tu ubicación" may be stale, so refresh it when allowed.
     // Without permission the user decides, nothing is asked on load.
@@ -75,6 +89,11 @@ export function App() {
       <Suspense fallback={<MapFallback />}>
         <StationMap
           origin={origin}
+          mode={mode}
+          routes={routes}
+          routeIndex={routeIndex}
+          destination={mode === 'route' ? routeTo : null}
+          onSelectRoute={selectRoute}
           stations={visible.ranked}
           selectedId={selectedId}
           radiusKm={radiusKm}
@@ -89,7 +108,7 @@ export function App() {
     </ErrorBoundary>
   )
 
-  const searchHereButton = searchHere ? (
+  const searchHereButton = searchHere && mode === 'nearby' ? (
     <Button
       variant="secondary"
       size="sm"
@@ -133,7 +152,8 @@ export function App() {
               <Logo />
               <SettingsButton />
             </div>
-            <PlaceSearch />
+            <ModeSwitch />
+            {mode === 'route' ? <RoutePlanner /> : <PlaceSearch />}
             <FuelSelector visible={visible} />
             {panel === 'browse' ? (
               <>
@@ -161,10 +181,8 @@ export function App() {
         ref={topBarRef}
         className="pointer-events-none absolute inset-x-0 top-0 z-10 space-y-2 px-4 pt-[calc(env(safe-area-inset-top)+12px)]"
       >
-        <div className="pointer-events-auto flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <PlaceSearch floating />
-          </div>
+        <div className="pointer-events-auto flex items-start gap-2">
+          <div className="min-w-0 flex-1">{mode === 'route' ? <RoutePlanner floating /> : <PlaceSearch floating />}</div>
           <SettingsButton floating />
         </div>
         <div className="pointer-events-auto">
@@ -181,6 +199,7 @@ export function App() {
         header={
           panel === 'browse' ? (
             <div className="space-y-3 px-4 pb-3">
+              <ModeSwitch />
               <ResultsSummary visible={visible} />
               <BrowseControls visible={visible} />
             </div>

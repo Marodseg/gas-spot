@@ -48,3 +48,17 @@ export function formatPriceDelta(delta: number): string {
   const value = distanceFormat.format(cents)
   return delta < 0 ? `${value} cént. menos` : `${value} cént. más`
 }
+
+/** "4 h 50 min", "2 h", "45 min". */
+export function formatDuration(minutes: number): string {
+  const total = Math.max(1, Math.round(minutes))
+  const hours = Math.floor(total / 60)
+  const rest = total % 60
+  if (hours === 0) return `${rest} min`
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`
+}
+
+/** Along a route a station's `distanceKm` is the estimated extra road distance to visit it. */
+export function formatDetour(detourKm: number): string {
+  return detourKm < 0.1 ? 'En la ruta' : `+${formatDistance(detourKm)} de desvío`
+}

@@ -15,6 +15,8 @@ export function describeRecommendation(
   stations: readonly Station[],
   fuelLabel: string,
   liters: number,
+  /** Along a route the reference is the station with the smallest detour, not the closest one. */
+  alongRoute = false,
 ): RecommendationCopy | null {
   if (result.bestId === null) return null
   const best = stations.find((station) => station.id === result.bestId)
@@ -30,7 +32,7 @@ export function describeRecommendation(
   if (best.id === nearest.id && cheapest.id === nearest.id) {
     return {
       title: 'La más cercana también es la más barata',
-      short: 'La más barata y la más cercana',
+      short: alongRoute ? 'La más barata y con menos desvío' : 'La más barata y la más cercana',
       body: `${bestName} publica el menor precio de ${fuelLabel} y es la que menos desvío pide.`,
       estimate: false,
     }
@@ -39,7 +41,7 @@ export function describeRecommendation(
   if (best.id === nearest.id && cheapest.id !== nearest.id) {
     return {
       title: 'No compensa ir más lejos',
-      short: 'Ir más lejos no compensa',
+      short: alongRoute ? 'Desviarse más no compensa' : 'Ir más lejos no compensa',
       body: `${cheapestName} es más barata por litro, pero con ${liters} L de ${fuelLabel} el desplazamiento se come el ahorro.`,
       estimate: true,
     }

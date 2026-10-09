@@ -13,12 +13,20 @@ const SORTS: { value: SortMode; label: string }[] = [
   { value: 'distance', label: 'Más cercanas' },
 ]
 
+// Along a route "distance" orders by kilometre of the trip, and the radius does not apply.
+const ROUTE_SORTS: { value: SortMode; label: string }[] = [
+  { value: 'recommended', label: 'Recomendadas' },
+  { value: 'price', label: 'Más baratas' },
+  { value: 'distance', label: 'En orden de ruta' },
+]
+
 interface FilterBarProps {
   brands: string[]
   activeFilters: number
+  alongRoute?: boolean
 }
 
-export function FilterBar({ brands, activeFilters }: FilterBarProps) {
+export function FilterBar({ brands, activeFilters, alongRoute = false }: FilterBarProps) {
   const radiusKm = usePreferences((state) => state.radiusKm)
   const sort = usePreferences((state) => state.sort)
   const openNow = usePreferences((state) => state.openNow)
@@ -33,15 +41,17 @@ export function FilterBar({ brands, activeFilters }: FilterBarProps) {
         <ChipSelect
           label="Ordenar"
           value={sort}
-          options={SORTS}
+          options={alongRoute ? ROUTE_SORTS : SORTS}
           onChange={(value) => usePreferences.getState().setSort(value)}
         />
-        <ChipSelect
-          label="Distancia máxima"
-          value={radiusKm}
-          options={RADII}
-          onChange={(value) => usePreferences.getState().setRadiusKm(value)}
-        />
+        {alongRoute ? null : (
+          <ChipSelect
+            label="Distancia máxima"
+            value={radiusKm}
+            options={RADII}
+            onChange={(value) => usePreferences.getState().setRadiusKm(value)}
+          />
+        )}
         <Chip active={openNow} onClick={() => usePreferences.getState().setOpenNow(!openNow)}>
           <Clock aria-hidden className="size-3.5" />
           Abiertas

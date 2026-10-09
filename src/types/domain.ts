@@ -32,9 +32,22 @@ export interface Station extends Coordinates {
   updatedAt: string | null
   prices: Partial<Record<FuelField, number>>
   services: string | null
+  /** Route mode only: kilometre of the route closest to the station. */
+  routeKm?: number
 }
 
 export type SortMode = 'recommended' | 'price' | 'distance'
+export type SearchMode = 'nearby' | 'route'
+
+/** One driving alternative between two places, as returned by Precioil. */
+export interface RouteOption {
+  id: string
+  distanceKm: number
+  durationMinutes: number
+  viaRoads: string[]
+  /** Simplified geometry, [longitude, latitude] pairs. */
+  line: [number, number][]
+}
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type Panel = 'browse' | 'detail' | 'compare' | 'settings'
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { describeUpdate } from './datetime'
-import { formatDistance, formatPrice, formatPriceDelta, formatPricePerLiter } from './format'
+import { formatDetour, formatDistance, formatDuration, formatPrice, formatPriceDelta, formatPricePerLiter } from './format'
 
 describe('formato de precios y distancias', () => {
   it('usa un único formato español en toda la interfaz', () => {
@@ -8,6 +8,17 @@ describe('formato de precios y distancias', () => {
     expect(formatPrice(1.429)).toBe('1,429 €')
     expect(formatDistance(1)).toBe('1,0 km')
     expect(formatDistance(0.35)).toBe('350 m')
+  })
+
+  it('describe el desvío de una gasolinera en ruta', () => {
+    expect(formatDetour(0)).toBe('En la ruta')
+    expect(formatDetour(2.1)).toBe('+2,1 km de desvío')
+  })
+
+  it('expresa la duración de una ruta en horas y minutos', () => {
+    expect(formatDuration(290.3)).toBe('4 h 50 min')
+    expect(formatDuration(120)).toBe('2 h')
+    expect(formatDuration(44.6)).toBe('45 min')
   })
 
   it('expresa la diferencia por litro en céntimos', () => {

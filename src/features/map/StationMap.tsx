@@ -8,9 +8,9 @@ import {
 } from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { Feature, FeatureCollection, Point, Polygon } from 'geojson'
+import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import { useEffect, useRef } from 'react'
-import type { Place } from '../../types/domain'
+import type { Place, RouteOption, SearchMode } from '../../types/domain'
 import { haversineKm, zoomForRadius } from '../../utils/distance'
 import { formatPrice } from '../../utils/format'
 import type { RankedStation } from '../../utils/ranking'
@@ -27,6 +27,7 @@ const STYLES = {
 } as const
 const STATIONS = 'stations'
 const RADIUS = 'search-radius'
+const ROUTES = 'routes'
 /** Above this zoom every station is drawn on its own. */
 const CLUSTER_MAX_ZOOM = 14
 
@@ -38,6 +39,12 @@ export interface MapInsets {
 
 interface StationMapProps {
   origin: Place | null
+  mode: SearchMode
+  routes: RouteOption[]
+  routeIndex: number
+  /** Route mode: end of the trip. */
+  destination: Place | null
+  onSelectRoute: (index: number) => void
   stations: RankedStation[]
   selectedId: number | null
   radiusKm: number
@@ -58,6 +65,10 @@ interface MarkerEntry {
 /** Latest props, read by MapLibre event handlers that are registered once. */
 interface Live {
   origin: Place | null
+  mode: SearchMode
+  routes: RouteOption[]
+  routeIndex: number
+  onSelectRoute: (index: number) => void
   radiusKm: number
   dark: boolean
   insets: MapInsets
@@ -69,6 +80,11 @@ interface Live {
 
 export function StationMap({
   origin,
+  mode,
+  routes,
+  routeIndex,
+  destination,
+  onSelectRoute,
   stations,
   selectedId,
   radiusKm,
@@ -85,8 +101,13 @@ export function StationMap({
   const originMarkerRef = useRef<Marker | null>(null)
   const signatureRef = useRef('')
   const lastFlyRef = useRef('')
+  const destinationMarkerRef = useRef<Marker | null>(null)
   const live = useRef<Live>({
     origin,
+    mode,
+    routes,
+    routeIndex,
+    onSelectRoute,
     radiusKm,
     dark,
     insets,
@@ -96,7 +117,19 @@ export function StationMap({
     onSearchHere,
   })
   useEffect(() => {
-    Object.assign(live.current, { origin, radiusKm, dark, insets, selectedId, onSelect, onSearchHere })
+    Object.assign(live.current, {
+      origin,
+      mode,
+      routes,
+      routeIndex,
+      onSelectRoute,
+      radiusKm,
+      dark,
+      insets,
+      selectedId,
+      onSelect,
+      onSearchHere,
+    })
   })
 
   // Create the map once.
@@ -142,18 +175,34 @@ export function StationMap({
         moved > Math.max(0.6, current.radiusKm * 0.45) ? { latitude: middle.lat, longitude: middle.lng } : null,
       )
     })
+    // Tapping a greyed-out alternative selects it.
+    map.on('click', `${ROUTES}-alt`, (event) => {
+      const index = numberOf(event.features?.[0]?.properties?.index)
+      if (index !== null) live.current.onSelectRoute(index)
+    })
+    map.on('mouseenter', `${ROUTES}-alt`, () => {
+      map.getCanvas().style.cursor = 'pointer'
+    })
+    map.on('mouseleave', `${ROUTES}-alt`, () => {
+      map.getCanvas().style.cursor = ''
+    })
     map.on('sourcedata', (event: MapSourceDataEvent) => {
       if (event.sourceId === STATIONS && event.isSourceLoaded) sync()
     })
     // Runs on the first load and after every theme switch (setStyle drops sources and layers).
     map.on('style.load', () => {
       addLayers(map, live.current)
-      if (setStationData(map, [...live.current.byId.values()])) sync()
+      const stations = [...live.current.byId.values()]
+      if (!setStationData(map, stations)) return
+      // Data that arrived before the style is drawn now: remember it, or an emptied list would look unchanged.
+      signatureRef.current = stationSignature(stations)
+      sync()
     })
 
     return () => {
       markers.clear()
       originMarkerRef.current = null
+      destinationMarkerRef.current = null
       // A new map instance (StrictMode remount, layout switch) must be framed again.
       lastFlyRef.current = ''
       signatureRef.current = ''
@@ -185,6 +234,11 @@ export function StationMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !insetsReady) return
+    if (mode === 'route') {
+      // Routes frame themselves; coming back to nearby must fly again.
+      if (lastFlyRef.current !== '') lastFlyRef.current = 'route'
+      return
+    }
     const center = origin ?? SPAIN
     const zoom = origin ? radiusZoom(radiusKm) : 5
     const key = `${center.latitude.toFixed(4)}:${center.longitude.toFixed(4)}:${zoom}`
@@ -205,7 +259,7 @@ export function StationMap({
       duration: prefersReducedMotion() ? 0 : 500,
       essential: true,
     })
-  }, [origin, radiusKm, insetsReady])
+  }, [origin, radiusKm, insetsReady, mode])
 
   // Origin dot and search radius.
   useEffect(() => {
@@ -223,19 +277,66 @@ export function StationMap({
       originMarkerRef.current = new Marker({ element }).setLngLat([origin.longitude, origin.latitude]).addTo(map)
     }
     const source = map.getSource(RADIUS)
-    if (isGeoJson(source)) source.setData(radiusData(origin, radiusKm))
-  }, [origin, radiusKm])
+    if (isGeoJson(source)) source.setData(radiusData(mode === 'nearby' ? origin : null, radiusKm))
+  }, [origin, radiusKm, mode])
+
+  // Destination pin of the trip.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (!destination) {
+      destinationMarkerRef.current?.remove()
+      destinationMarkerRef.current = null
+      return
+    }
+    if (destinationMarkerRef.current) {
+      destinationMarkerRef.current.setLngLat([destination.longitude, destination.latitude])
+      return
+    }
+    const element = document.createElement('span')
+    element.className = 'destination-pin'
+    element.setAttribute('aria-hidden', 'true')
+    element.innerHTML = DESTINATION_GLYPH
+    destinationMarkerRef.current = new Marker({ element, anchor: 'bottom' })
+      .setLngLat([destination.longitude, destination.latitude])
+      .addTo(map)
+  }, [destination])
+
+  // Route lines; a newly chosen route is framed between the floating UI.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const source = map.getSource(ROUTES)
+    if (isGeoJson(source)) source.setData(routesData(mode === 'route' ? routes : [], routeIndex))
+    const route = mode === 'route' ? routes[routeIndex] : undefined
+    if (!route || route.line.length < 2) return
+    const { top, bottom } = live.current.insets
+    let [west, south, east, north] = [180, 90, -180, -90]
+    for (const [lng, lat] of route.line) {
+      west = Math.min(west, lng)
+      east = Math.max(east, lng)
+      south = Math.min(south, lat)
+      north = Math.max(north, lat)
+    }
+    map.fitBounds(
+      [
+        [west, south],
+        [east, north],
+      ],
+      { padding: { top: top + 32, bottom: bottom + 32, left: 40, right: 40 }, duration: prefersReducedMotion() ? 0 : 600 },
+    )
+  }, [routes, routeIndex, mode])
 
   // Station data: pushed only when something drawn changed (the list is re-ranked every minute).
   useEffect(() => {
     live.current.byId = new Map(stations.map((item) => [item.station.id, item]))
-    const signature = stations
-      .map((item) => `${item.station.id}:${item.price}:${item.band}:${item.isBest}:${item.openStatus}`)
-      .join('|')
+    const signature = stationSignature(stations)
     if (signature === signatureRef.current) return
     const map = mapRef.current
     if (!map || !setStationData(map, stations)) return
     signatureRef.current = signature
+    // sourcedata does not always fire for an emptied source; idle always does, so stale pins go away.
+    map.once('idle', () => syncMarkers(map, markersRef.current, live.current))
   }, [stations])
 
   // Selection: repaint the affected pins and bring the selected one into the uncovered area.
@@ -255,9 +356,17 @@ export function StationMap({
   return <div ref={containerRef} className="h-full w-full" role="region" aria-label="Mapa de gasolineras" />
 }
 
+/** What a pin shows; a list re-ranked with the same signature needs no redraw. */
+function stationSignature(stations: readonly RankedStation[]): string {
+  return stations.map((item) => `${item.station.id}:${item.price}:${item.band}:${item.isBest}:${item.openStatus}`).join('|')
+}
+
 function addLayers(map: MapLibreMap, current: Live) {
   if (!map.getSource(RADIUS)) {
-    map.addSource(RADIUS, { type: 'geojson', data: radiusData(current.origin, current.radiusKm) })
+    map.addSource(RADIUS, {
+      type: 'geojson',
+      data: radiusData(current.mode === 'nearby' ? current.origin : null, current.radiusKm),
+    })
     const color = current.dark ? '#4cc7ad' : '#0b6b5a'
     map.addLayer({ id: `${RADIUS}-fill`, type: 'fill', source: RADIUS, paint: { 'fill-color': color, 'fill-opacity': 0.04 } })
     map.addLayer({
@@ -265,6 +374,36 @@ function addLayers(map: MapLibreMap, current: Live) {
       type: 'line',
       source: RADIUS,
       paint: { 'line-color': color, 'line-opacity': 0.45, 'line-width': 1, 'line-dasharray': [3, 4] },
+    })
+  }
+  if (!map.getSource(ROUTES)) {
+    map.addSource(ROUTES, {
+      type: 'geojson',
+      data: routesData(current.mode === 'route' ? current.routes : [], current.routeIndex),
+    })
+    map.addLayer({
+      id: `${ROUTES}-alt`,
+      type: 'line',
+      source: ROUTES,
+      filter: ['==', ['get', 'selected'], false],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': current.dark ? '#5d6762' : '#a8a29a', 'line-width': 5, 'line-opacity': 0.8 },
+    })
+    map.addLayer({
+      id: `${ROUTES}-casing`,
+      type: 'line',
+      source: ROUTES,
+      filter: ['==', ['get', 'selected'], true],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': current.dark ? '#04211b' : '#ffffff', 'line-width': 8 },
+    })
+    map.addLayer({
+      id: `${ROUTES}-line`,
+      type: 'line',
+      source: ROUTES,
+      filter: ['==', ['get', 'selected'], true],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': current.dark ? '#4cc7ad' : '#0b6b5a', 'line-width': 5 },
     })
   }
   if (!map.getSource(STATIONS)) {
@@ -431,6 +570,23 @@ function radiusData(origin: Place | null, radiusKm: number): FeatureCollection<P
   const circle: Feature<Polygon> = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} }
   return { type: 'FeatureCollection', features: [circle] }
 }
+
+/** The selected route is drawn last so it sits on top of the alternatives. */
+function routesData(routes: readonly RouteOption[], selected: number): FeatureCollection<LineString> {
+  const features: Feature<LineString>[] = routes.map((route, index) => ({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: route.line },
+    properties: { index, selected: index === selected },
+  }))
+  features.sort((left, right) => Number(left.properties?.selected) - Number(right.properties?.selected))
+  return { type: 'FeatureCollection', features }
+}
+
+/** Lucide "map-pin", filled. */
+const DESTINATION_GLYPH =
+  '<svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" stroke="var(--surface)" stroke-width="1.5">' +
+  '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>' +
+  '<circle cx="12" cy="10" r="3" fill="var(--surface)" stroke="none"/></svg>'
 
 function emptyCollection(): FeatureCollection<Point> {
   return { type: 'FeatureCollection', features: [] }
