@@ -9,7 +9,7 @@ Abres la web, eliges el combustible, ves el mapa y la lista, y sales hacia la es
 - Busca gasolineras en un radio con la API de [Precioil](https://api.precioil.es/), sin descargar todas las de España.
 - Muestra el precio directamente sobre el mapa, con una escala relativa a los resultados actuales: barato, medio o caro. Color, icono y texto van juntos; nunca solo el color.
 - Ordena por opción recomendada, precio o distancia, y filtra por distancia, abiertas, marca y precio máximo.
-- Estima si un desvío compensa según los litros que vas a echar, el consumo y, si quieres, la ida y vuelta.
+- Estima si un desvío compensa según los litros que vas a echar, el consumo y, si después vuelves al punto de partida, la ida y vuelta.
 - Indica cuándo se actualizó cada precio y atenúa los que tienen más de 24 horas.
 - Ficha de la estación con el histórico de 7, 30 y 90 días integrado, y comparación de hasta tres estaciones.
 - Precio medio provincial cuando Precioil lo publica.

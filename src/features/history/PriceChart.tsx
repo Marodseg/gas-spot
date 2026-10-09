@@ -69,23 +69,26 @@ export function PriceChart({ points, label, empty }: PriceChartProps) {
         <span>{dayFormat.format(new Date(`${points[0]?.date ?? first.date}T00:00:00Z`))}</span>
         <span>Hoy · {formatPrice(last.price)}</span>
       </div>
-      <table className="sr-only">
-        <caption>Precios diarios de {label}</caption>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Precio</th>
-          </tr>
-        </thead>
-        <tbody>
-          {points.map((point) => (
-            <tr key={point.date}>
-              <td>{point.date}</td>
-              <td>{point.price === null ? 'Sin dato' : formatPrice(point.price)}</td>
+      {/* A table ignores the 1px box of sr-only and would stretch the scroll area; the wrapper clips it. */}
+      <div className="sr-only">
+        <table>
+          <caption>Precios diarios de {label}</caption>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Precio</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {points.map((point) => (
+              <tr key={point.date}>
+                <td>{point.date}</td>
+                <td>{point.price === null ? 'Sin dato' : formatPrice(point.price)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   )
 }

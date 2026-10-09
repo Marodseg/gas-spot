@@ -76,11 +76,17 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           value={consumption}
           onChange={(value) => usePreferences.getState().setConsumption(value)}
         />
-        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body">
-          Contar ida y vuelta
+        <label className="flex min-h-11 cursor-pointer items-start justify-between gap-3 text-body">
+          <span>
+            Vuelvo al punto de partida
+            <span id="round-trip-help" className="mt-0.5 block text-caption text-muted">
+              Cuenta el desvío dos veces: ir a la gasolinera y volver. Déjalo apagado si repostas de camino.
+            </span>
+          </span>
           <input
             type="checkbox"
-            className="size-5 accent-[var(--accent)]"
+            aria-describedby="round-trip-help"
+            className="mt-0.5 size-5 shrink-0 accent-[var(--accent)]"
             checked={roundTrip}
             onChange={(event) => usePreferences.getState().setRoundTrip(event.target.checked)}
           />
@@ -88,8 +94,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       </fieldset>
 
       <p className="text-caption leading-relaxed text-muted">
-        Los precios son los oficiales publicados por las gasolineras (vía Precioil). El coste del desvío es una
-        estimación: kilómetros de más frente a la gasolinera más cercana, sin peajes ni tráfico.
+        Los precios son los oficiales publicados por las gasolineras (vía Precioil). El desvío es una estimación:
+        los kilómetros de más frente a la gasolinera más cercana, medidos en línea recta desde el punto de
+        búsqueda (tu ubicación o el lugar buscado), sin peajes ni tráfico.
       </p>
     </section>
   )
