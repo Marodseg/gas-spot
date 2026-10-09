@@ -59,10 +59,10 @@ export function FilterBar({ brands, activeFilters }: FilterBarProps) {
       </div>
       {moreOpen ? (
         <div className="animate-fade-up grid grid-cols-2 gap-3 rounded-md border border-line bg-surface p-3">
-          <label className="grid gap-1.5 text-caption font-semibold text-muted">
+          <label className="grid min-w-0 gap-1.5 text-caption font-semibold text-muted">
             Marca
             <select
-              className="h-11 rounded-sm border border-line-strong bg-surface px-3 text-body font-normal text-ink"
+              className="h-11 w-full min-w-0 rounded-sm border border-line-strong bg-surface px-3 text-body font-normal text-ink"
               value={brand ?? ''}
               onChange={(event) => usePreferences.getState().setBrand(event.target.value || null)}
             >
@@ -86,12 +86,12 @@ export function FilterBar({ brands, activeFilters }: FilterBarProps) {
 function MaxPriceField({ value }: { value: number | null }) {
   const [draft, setDraft] = useState(value === null ? '' : formatPriceValue(value))
   return (
-    <label className="grid gap-1.5 text-caption font-semibold text-muted">
+    <label className="grid min-w-0 gap-1.5 text-caption font-semibold text-muted">
       Precio máximo
       <span className="flex h-11 items-center rounded-sm border border-line-strong bg-surface px-3 focus-within:border-accent">
         <input
           inputMode="decimal"
-          className="tabular min-w-0 flex-1 bg-transparent text-body font-normal text-ink outline-none placeholder:text-subtle"
+          className="tabular w-full min-w-0 flex-1 bg-transparent text-body font-normal text-ink outline-none placeholder:text-subtle"
           placeholder="Sin límite"
           value={draft}
           onChange={(event) => {
