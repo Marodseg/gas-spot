@@ -23,8 +23,8 @@ export default defineConfig({
         start_url: '.',
         scope: '.',
         display: 'standalone',
-        background_color: '#f4f1ea',
-        theme_color: '#0c6b5c',
+        background_color: '#f4f2ee',
+        theme_color: '#0b6b5a',
         icons: [
           {
             src: 'icons/icon-192.png',
@@ -57,7 +57,7 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: /^https:\/\/.*basemaps\.cartocdn\.com\/.*/i,
+            urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/Canvas\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',

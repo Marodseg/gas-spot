@@ -1,105 +1,105 @@
-import { Navigation } from 'lucide-react'
-import type { ProvinceAverage } from '../../types/domain'
-import type { RankedStation } from '../../utils/ranking'
-import { formatDistance, formatPrice, formatSignedPrice } from '../../utils/format'
-import { openingLabel } from '../../utils/opening-hours'
-import { openDirections } from '../../utils/navigation'
+import { BadgeCheck, Navigation } from 'lucide-react'
+import { memo } from 'react'
+import { BandBadge } from '../../components/ui/BandBadge'
+import { Price } from '../../components/ui/Price'
 import { analytics } from '../../services/analytics'
+import { describeUpdate } from '../../utils/datetime'
+import { formatDistance } from '../../utils/format'
+import { openDirections } from '../../utils/navigation'
+import type { RankedStation } from '../../utils/ranking'
 
 interface StationCardProps {
   item: RankedStation
   selected: boolean
-  compared: boolean
-  average: ProvinceAverage | null
-  provinceName: string | null
+  /** Why the recommended station is recommended, shown only on that card. */
+  bestReason: string | null
+  now: Date
   onSelect: (id: number) => void
-  onCompare: (id: number) => void
 }
 
-export function StationCard({
-  item,
-  selected,
-  compared,
-  average,
-  provinceName,
-  onSelect,
-  onCompare,
-}: StationCardProps) {
+export const StationCard = memo(function StationCard({ item, selected, bestReason, now, onSelect }: StationCardProps) {
   const { station } = item
-  const title = station.brand || station.name
-  const showName = station.name.localeCompare(title, 'es', { sensitivity: 'base' }) !== 0
-  const delta = average ? item.price - average.price : null
+  const update = describeUpdate(station.updatedAt, now)
+  const stale = update?.freshness === 'stale'
+  const place = station.locality || station.municipality
 
   return (
     <article
       id={`station-${station.id}`}
-      className={`rounded-3xl border bg-surface p-4 shadow-sm ${selected ? 'border-accent' : 'border-line'}`}
+      aria-current={selected || undefined}
+      className={`relative rounded-md border bg-surface transition-[border-color,box-shadow] duration-200 ${
+        selected
+          ? 'border-ink shadow-md'
+          : item.isBest
+            ? 'border-accent/40 shadow-sm hover:border-accent/70'
+            : 'border-line shadow-sm hover:border-line-strong'
+      }`}
     >
-      <button type="button" className="w-full text-left" onClick={() => onSelect(station.id)}>
+      <button
+        type="button"
+        className="w-full rounded-md p-4 text-left"
+        onClick={() => onSelect(station.id)}
+      >
+        {item.isBest ? (
+          <p className="mb-2 flex items-center gap-1.5 text-caption font-semibold text-accent">
+            <BadgeCheck aria-hidden className="size-4" />
+            Recomendada
+            {bestReason ? <span className="truncate font-medium text-muted">· {bestReason}</span> : null}
+          </p>
+        ) : null}
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.14em] text-muted uppercase">{title}</p>
-            {showName ? <p className="mt-1 text-sm">{station.name}</p> : null}
+          <div className="min-w-0">
+            <Price value={item.price} className={stale ? 'opacity-70' : ''} />
+            <p className="mt-0.5 truncate text-title font-semibold">{station.brand}</p>
           </div>
-          {item.isBest ? (
-            <span className="rounded-full bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">Mejor opción</span>
-          ) : null}
+          <div className="shrink-0 pt-1 text-right">
+            <p className="tabular text-title font-semibold">{formatDistance(station.distanceKm)}</p>
+            {place ? <p className="max-w-32 truncate text-body-sm text-muted">{place}</p> : null}
+          </div>
         </div>
-        <p className="mt-3 text-3xl font-semibold tracking-tight tabular-nums">{formatPrice(item.price)}</p>
-        <p className="mt-1 text-sm text-muted">
-          <span className={bandClass(item.band)}>{item.bandLabel}</span>
-          {delta !== null && provinceName ? (
-            <span>
-              {' '}
-              · {formatSignedPrice(delta)} de la media de {provinceName}
-            </span>
-          ) : null}
-        </p>
-        <p className="mt-3 text-sm font-medium">{formatDistance(station.distanceKm)}</p>
-        <p className="mt-1 text-sm text-muted">
-          {station.address}
-          {station.locality ? ` · ${station.locality}` : ''}
-        </p>
-        <p className="mt-1 text-xs text-muted">{openingLabel(item.openStatus)}</p>
+        <div className="mt-3 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 pr-12">
+          <BandBadge band={item.band} label={item.bandLabel} />
+          <p className="text-caption text-muted">
+            {item.openStatus === 'open' ? <span className="font-semibold text-cheap">Abierta</span> : null}
+            {item.openStatus === 'closed' ? <span className="font-semibold text-high">Cerrada</span> : null}
+            {item.openStatus !== 'unknown' && update ? ' · ' : null}
+            {update ? <span className={stale ? 'font-semibold text-mid' : ''}>{update.label}</span> : null}
+          </p>
+        </div>
       </button>
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent px-3 text-sm font-semibold text-accent-contrast"
-          onClick={() => {
-            analytics.track('directions_open', { stationId: station.id })
-            openDirections(station.latitude, station.longitude)
-          }}
-        >
-          <Navigation aria-hidden className="size-4" />
-          Cómo llegar
-        </button>
-        <button
-          type="button"
-          aria-pressed={compared}
-          className="min-h-11 rounded-full border border-line px-3 text-sm font-semibold"
-          onClick={() => onCompare(station.id)}
-        >
-          {compared ? 'En la comparación' : 'Comparar'}
-        </button>
-      </div>
+      <button
+        type="button"
+        aria-label={`Cómo llegar a ${station.brand}`}
+        title="Cómo llegar"
+        className="absolute right-3 bottom-3 grid size-11 place-items-center rounded-full bg-accent-soft text-accent transition-colors hover:bg-accent hover:text-accent-contrast"
+        onClick={() => {
+          analytics.track('directions_open', { stationId: station.id, from: 'card' })
+          openDirections(station.latitude, station.longitude)
+        }}
+      >
+        <Navigation aria-hidden className="size-4.5" />
+      </button>
     </article>
   )
-}
+})
 
-function bandClass(band: RankedStation['band']): string {
-  switch (band) {
-    case 'cheap':
-      return 'text-cheap'
-    case 'mid':
-      return 'text-mid'
-    case 'high':
-      return 'text-high'
-    case 'unknown':
-      return 'text-muted'
-    default: {
-      const unreachable: never = band
-      return unreachable
-    }
-  }
+export function StationCardSkeleton() {
+  return (
+    <div className="rounded-md border border-line bg-surface p-4" aria-hidden>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="skeleton h-7 w-28" />
+          <div className="skeleton mt-2 h-4 w-24" />
+        </div>
+        <div className="flex flex-col items-end pt-1">
+          <div className="skeleton h-4 w-14" />
+          <div className="skeleton mt-2 h-3 w-16" />
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <div className="skeleton h-6 w-28 rounded-full" />
+        <div className="skeleton h-3 w-32" />
+      </div>
+    </div>
+  )
 }

@@ -36,7 +36,7 @@ export interface Station extends Coordinates {
 
 export type SortMode = 'recommended' | 'price' | 'distance'
 export type ThemePreference = 'light' | 'dark' | 'system'
-export type Panel = 'browse' | 'detail' | 'history' | 'compare' | 'settings'
+export type Panel = 'browse' | 'detail' | 'compare' | 'settings'
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export type AppErrorCode =
@@ -52,7 +52,10 @@ export type AppErrorCode =
 
 export interface AppError {
   code: AppErrorCode
+  title: string
   message: string
+  /** Technical detail (HTTP status, API message) shown only behind "Detalles técnicos". */
+  detail: string | null
 }
 
 export interface Province {

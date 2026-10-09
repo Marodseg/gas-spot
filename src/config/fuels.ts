@@ -1,10 +1,15 @@
+/**
+ * Fuels the station endpoint reports as fixed price fields. `id` matches the
+ * API's fuel-type id (used for history and provincial averages) and `field`
+ * the price key in station responses. Labels are ours: the API's names are
+ * unaccented and mixed with other countries' fuels.
+ */
 export const FUELS = [
   {
     id: 6,
     field: 'Diesel',
     averageName: 'Gasoleo A',
     label: 'Gasóleo A',
-    shortLabel: 'Diésel',
     primary: true,
   },
   {
@@ -12,7 +17,6 @@ export const FUELS = [
     field: 'Gasolina95',
     averageName: 'Gasolina 95 E5',
     label: 'Gasolina 95',
-    shortLabel: '95',
     primary: true,
   },
   {
@@ -20,7 +24,6 @@ export const FUELS = [
     field: 'Gasolina98',
     averageName: 'Gasolina 98 E5',
     label: 'Gasolina 98',
-    shortLabel: '98',
     primary: true,
   },
   {
@@ -28,23 +31,20 @@ export const FUELS = [
     field: 'GLP',
     averageName: 'Gases licuados del petróleo',
     label: 'GLP',
-    shortLabel: 'GLP',
     primary: true,
   },
   {
     id: 8,
     field: 'DieselPremium',
     averageName: 'Gasoleo Premium',
-    label: 'Diésel premium',
-    shortLabel: 'Diésel+',
+    label: 'Gasóleo Premium',
     primary: false,
   },
   {
     id: 11,
     field: 'Gasolina95_E5_Premium',
     averageName: 'Gasolina 95 E5 Premium',
-    label: '95 premium',
-    shortLabel: '95+',
+    label: 'Gasolina 95 Premium',
     primary: false,
   },
   {
@@ -52,7 +52,6 @@ export const FUELS = [
     field: 'HVO',
     averageName: 'HVO',
     label: 'HVO',
-    shortLabel: 'HVO',
     primary: false,
   },
   {
@@ -60,7 +59,6 @@ export const FUELS = [
     field: 'DieselB',
     averageName: 'Gasoleo B',
     label: 'Gasóleo B',
-    shortLabel: 'B',
     primary: false,
   },
 ] as const

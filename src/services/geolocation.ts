@@ -1,9 +1,5 @@
-import type { AppError, Place } from '../types/domain'
-import { messageFor } from '../utils/messages'
-
-export function appError(code: AppError['code']): AppError {
-  return { code, message: messageFor(code) }
-}
+import type { Place } from '../types/domain'
+import { appError } from '../utils/messages'
 
 export async function geolocationPermission(): Promise<PermissionState | 'unknown'> {
   if (typeof navigator === 'undefined' || !navigator.permissions?.query) return 'unknown'
@@ -33,7 +29,7 @@ export function locate(): Promise<Place> {
         if (error.code === error.PERMISSION_DENIED) reject(appError('geolocation_denied'))
         else reject(appError('geolocation_unavailable'))
       },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     )
   })
 }

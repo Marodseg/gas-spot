@@ -27,6 +27,7 @@ interface PreferencesState {
   setConsumption: (value: number) => void
   setRoundTrip: (roundTrip: boolean) => void
   setLastPlace: (place: Place) => void
+  clearFilters: () => void
 }
 
 export const usePreferences = create<PreferencesState>()(
@@ -54,6 +55,7 @@ export const usePreferences = create<PreferencesState>()(
       setConsumption: (value) => set({ consumptionLitersPer100Km: clamp(value, 2, 20) }),
       setRoundTrip: (roundTrip) => set({ roundTrip }),
       setLastPlace: (place) => set({ lastPlace: place }),
+      clearFilters: () => set({ brand: null, maxPrice: null, openNow: false }),
     }),
     { name: 'reposta.preferences.v1' },
   ),

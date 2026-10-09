@@ -1,102 +1,68 @@
+import { Clock, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
-import { findFuel } from '../../config/fuels'
-import { analytics } from '../../services/analytics'
+import { Chip, ChipSelect } from '../../components/ui/Chip'
 import { usePreferences } from '../../stores/preferences'
 import type { SortMode } from '../../types/domain'
-import { FuelPicker } from '../fuel-selector/FuelPicker'
+import { formatPriceValue } from '../../utils/format'
 
-const RADII = [2, 5, 10, 20, 30]
+const RADII = [2, 5, 10, 20, 30].map((radius) => ({ value: radius, label: `${radius} km` }))
 
-const SORTS: { id: SortMode; label: string }[] = [
-  { id: 'recommended', label: 'Recomendadas' },
-  { id: 'price', label: 'Más baratas' },
-  { id: 'distance', label: 'Más cercanas' },
+const SORTS: { value: SortMode; label: string }[] = [
+  { value: 'recommended', label: 'Recomendadas' },
+  { value: 'price', label: 'Más baratas' },
+  { value: 'distance', label: 'Más cercanas' },
 ]
 
 interface FilterBarProps {
   brands: string[]
+  activeFilters: number
 }
 
-export function FilterBar({ brands }: FilterBarProps) {
-  const fuelId = usePreferences((state) => state.fuelId)
+export function FilterBar({ brands, activeFilters }: FilterBarProps) {
   const radiusKm = usePreferences((state) => state.radiusKm)
   const sort = usePreferences((state) => state.sort)
   const openNow = usePreferences((state) => state.openNow)
   const brand = usePreferences((state) => state.brand)
   const maxPrice = usePreferences((state) => state.maxPrice)
-  const [more, setMore] = useState(false)
-  const [filtersOpen, setFiltersOpen] = useState(false)
-  const fuel = findFuel(fuelId)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const extraFilters = Number(brand !== null) + Number(maxPrice !== null)
 
   return (
-    <div className="space-y-2">
-      <FuelPicker
-        selectedId={fuelId}
-        showSecondary={more}
-        onSelect={(next) => {
-          analytics.track('fuel_selected', { fuelId: next.id })
-          usePreferences.getState().setFuelId(next.id)
-        }}
-      />
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        <button
-          type="button"
-          className="min-h-11 shrink-0 rounded-full border border-line bg-surface px-3 text-sm font-medium"
-          onClick={() => setMore((value) => !value)}
-        >
-          {more ? 'Menos combustibles' : `Más · ${fuel.shortLabel}`}
-        </button>
-        {RADII.map((radius) => (
-          <button
-            key={radius}
-            type="button"
-            aria-pressed={radiusKm === radius}
-            className={`min-h-11 shrink-0 rounded-full px-3 text-sm font-medium ${
-              radiusKm === radius ? 'bg-ink text-bg' : 'border border-line bg-surface'
-            }`}
-            onClick={() => usePreferences.getState().setRadiusKm(radius)}
-          >
-            ≤ {radius} km
-          </button>
-        ))}
-        {SORTS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={sort === option.id}
-            className={`min-h-11 shrink-0 rounded-full px-3 text-sm font-medium ${
-              sort === option.id ? 'bg-ink text-bg' : 'border border-line bg-surface'
-            }`}
-            onClick={() => usePreferences.getState().setSort(option.id)}
-          >
-            {option.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          aria-pressed={openNow}
-          className={`min-h-11 shrink-0 rounded-full px-3 text-sm font-medium ${
-            openNow ? 'bg-ink text-bg' : 'border border-line bg-surface'
-          }`}
-          onClick={() => usePreferences.getState().setOpenNow(!openNow)}
-        >
+    <div className="space-y-3">
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:-mx-5 md:px-5" role="group" aria-label="Filtros">
+        <ChipSelect
+          label="Ordenar"
+          value={sort}
+          options={SORTS}
+          onChange={(value) => usePreferences.getState().setSort(value)}
+        />
+        <ChipSelect
+          label="Distancia máxima"
+          value={radiusKm}
+          options={RADII}
+          onChange={(value) => usePreferences.getState().setRadiusKm(value)}
+        />
+        <Chip active={openNow} onClick={() => usePreferences.getState().setOpenNow(!openNow)}>
+          <Clock aria-hidden className="size-3.5" />
           Abiertas
-        </button>
-        <button
-          type="button"
-          aria-expanded={filtersOpen}
-          className="min-h-11 shrink-0 rounded-full border border-line bg-surface px-3 text-sm font-medium"
-          onClick={() => setFiltersOpen((value) => !value)}
-        >
-          Filtros
-        </button>
+        </Chip>
+        <Chip active={extraFilters > 0 || moreOpen} aria-pressed={undefined} aria-expanded={moreOpen} onClick={() => setMoreOpen((value) => !value)}>
+          <SlidersHorizontal aria-hidden className="size-3.5" />
+          {extraFilters > 0 ? `Filtros · ${extraFilters}` : 'Más filtros'}
+        </Chip>
+        {activeFilters > 0 ? (
+          <Chip onClick={() => usePreferences.getState().clearFilters()} aria-label="Quitar filtros" className="text-muted">
+            <RotateCcw aria-hidden className="size-3.5" />
+            Quitar
+          </Chip>
+        ) : null}
       </div>
-      {filtersOpen ? (
-        <div className="grid gap-3 rounded-2xl border border-line bg-surface p-3">
-          <label className="grid gap-1 text-sm">
+      {moreOpen ? (
+        <div className="animate-fade-up grid grid-cols-2 gap-3 rounded-md border border-line bg-surface p-3">
+          <label className="grid gap-1.5 text-caption font-semibold text-muted">
             Marca
             <select
-              className="min-h-11 rounded-xl border border-line bg-bg px-3"
+              className="h-11 rounded-sm border border-line-strong bg-surface px-3 text-body font-normal text-ink"
               value={brand ?? ''}
               onChange={(event) => usePreferences.getState().setBrand(event.target.value || null)}
             >
@@ -108,26 +74,39 @@ export function FilterBar({ brands }: FilterBarProps) {
               ))}
             </select>
           </label>
-          <label className="grid gap-1 text-sm">
-            Precio máximo (€/L)
-            <input
-              inputMode="decimal"
-              className="min-h-11 rounded-xl border border-line bg-bg px-3"
-              placeholder="Sin límite"
-              value={maxPrice ?? ''}
-              onChange={(event) => {
-                const normalized = event.target.value.replace(',', '.').trim()
-                if (!normalized) {
-                  usePreferences.getState().setMaxPrice(null)
-                  return
-                }
-                const value = Number(normalized)
-                if (Number.isFinite(value)) usePreferences.getState().setMaxPrice(value)
-              }}
-            />
-          </label>
+          {/* Remount when cleared from outside so the draft resets too. */}
+          <MaxPriceField key={maxPrice === null ? 'empty' : 'set'} value={maxPrice} />
         </div>
       ) : null}
     </div>
+  )
+}
+
+/** Local draft so "1," can be typed before it becomes a number. */
+function MaxPriceField({ value }: { value: number | null }) {
+  const [draft, setDraft] = useState(value === null ? '' : formatPriceValue(value))
+  return (
+    <label className="grid gap-1.5 text-caption font-semibold text-muted">
+      Precio máximo
+      <span className="flex h-11 items-center rounded-sm border border-line-strong bg-surface px-3 focus-within:border-accent">
+        <input
+          inputMode="decimal"
+          className="tabular min-w-0 flex-1 bg-transparent text-body font-normal text-ink outline-none placeholder:text-subtle"
+          placeholder="Sin límite"
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            const normalized = event.target.value.replace(',', '.').trim()
+            if (!normalized) {
+              usePreferences.getState().setMaxPrice(null)
+              return
+            }
+            const next = Number(normalized)
+            if (Number.isFinite(next)) usePreferences.getState().setMaxPrice(next)
+          }}
+        />
+        <span className="text-body-sm font-normal text-muted">€/L</span>
+      </span>
+    </label>
   )
 }

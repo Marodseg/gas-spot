@@ -3,7 +3,7 @@ import { createCache } from '../cache'
 import { buildPrecioilUrl, precioilHeaders } from './client'
 import { mapHttpError } from './errors'
 import { parseStation, parseStationList } from './normalize'
-import { messageFor } from '../../utils/messages'
+import { appError, copyFor } from '../../utils/messages'
 
 const origin = { latitude: 37.1773, longitude: -3.5986 }
 
@@ -95,8 +95,12 @@ describe('cliente', () => {
     expect(mapHttpError(401, { error: 'invalid_api_key', message: 'API key no valida.' }, null).code).toBe('unauthorized')
     expect(mapHttpError(429, { message: 'límite' }, '5').code).toBe('rate_limit')
     expect(mapHttpError(404, { message: 'Estación no encontrada.' }, null).message).toMatch(/encontrada/i)
-    expect(messageFor('geolocation_denied')).toMatch(/manualmente/i)
-    expect(messageFor('network')).toMatch(/Precioil/)
+    expect(copyFor('geolocation_denied').message).toMatch(/Busca una ciudad/i)
+    expect(copyFor('network').title).toBe('Sin conexión')
+    // User copy never leaks API wording; the technical detail travels apart.
+    const unauthorized = appError('unauthorized', 'HTTP 403 · api_key_origin_not_allowed')
+    expect(unauthorized.message).not.toMatch(/key|clave|API/i)
+    expect(unauthorized.detail).toMatch(/403/)
   })
 })
 
@@ -120,5 +124,15 @@ describe('caché', () => {
     const failing = createCache(() => 0)
     await expect(failing.fetch('b', 1000, () => Promise.reject(new Error('fallo')))).rejects.toThrow('fallo')
     await expect(failing.fetch('b', 1000, () => Promise.resolve('recuperado'))).resolves.toBe('recuperado')
+  })
+})
+
+describe('caché con peticiones canceladas', () => {
+  it('reintenta para el segundo interesado si el primero cancela la petición compartida', async () => {
+    const cache = createCache(() => 0)
+    const aborted = cache.fetch('c', 1000, () => Promise.reject(new DOMException('cancelada', 'AbortError')))
+    const second = cache.fetch('c', 1000, () => Promise.resolve('datos'))
+    await expect(aborted).rejects.toThrow('cancelada')
+    await expect(second).resolves.toBe('datos')
   })
 })

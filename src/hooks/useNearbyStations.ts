@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { isPrecioilError } from '../api/precioil/errors'
+import { describePrecioilError, isPrecioilError } from '../api/precioil/errors'
 import { getProvinceFuelAverage } from '../api/precioil/provinces'
 import { searchByRadius } from '../api/precioil/stations'
-import { appError } from '../services/geolocation'
 import { usePreferences } from '../stores/preferences'
 import { useSession } from '../stores/session'
+import { appError } from '../utils/messages'
 import { fold } from '../utils/text'
 
 export function useNearbyStations(): void {
@@ -33,10 +33,10 @@ export function useNearbyStations(): void {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
         if (isPrecioilError(error)) {
-          useSession.getState().setError(appError(error.code))
+          useSession.getState().setError(appError(error.code, describePrecioilError(error)))
           return
         }
-        useSession.getState().setError(appError('network'))
+        useSession.getState().setError(appError('network', error instanceof Error ? error.message : String(error)))
       })
 
     return () => controller.abort()

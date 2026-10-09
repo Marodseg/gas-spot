@@ -15,6 +15,12 @@ const distanceFormat = new Intl.NumberFormat('es-ES', {
   maximumFractionDigits: 1,
 })
 
+/** "1,749" — the bare number, for layouts that render the unit separately. */
+export function formatPriceValue(price: number): string {
+  return priceFormat.format(price)
+}
+
+/** "1,749 €" — compact form for map pins and charts. */
 export function formatPrice(price: number): string {
   return `${priceFormat.format(price)} €`
 }
@@ -35,9 +41,10 @@ export function formatDistance(km: number): string {
   return `${distanceFormat.format(km)} km`
 }
 
-export function formatSignedPrice(delta: number): string {
-  const abs = priceFormat.format(Math.abs(delta))
-  if (delta < -0.0005) return `${abs} € por debajo`
-  if (delta > 0.0005) return `${abs} € por encima`
-  return 'en la media'
+/** "3,6 cént. menos" / "1,2 cént. más" / "En la media" for a per-litre difference. */
+export function formatPriceDelta(delta: number): string {
+  const cents = Math.abs(delta) * 100
+  if (cents < 0.05) return 'En la media'
+  const value = distanceFormat.format(cents)
+  return delta < 0 ? `${value} cént. menos` : `${value} cént. más`
 }

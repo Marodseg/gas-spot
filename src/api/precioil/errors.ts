@@ -16,6 +16,11 @@ export function isPrecioilError(error: unknown): error is PrecioilError {
   return error instanceof PrecioilError
 }
 
+/** "HTTP 403 · unauthorized · El origen no esta autorizado…" for the technical-details disclosure. */
+export function describePrecioilError(error: PrecioilError): string {
+  return [error.status === null ? null : `HTTP ${error.status}`, error.code, error.message].filter(Boolean).join(' · ')
+}
+
 export function mapHttpError(status: number, body: unknown, retryAfter: string | null): PrecioilError {
   const detail = messageFromBody(body)
   if (status === 401 || status === 403) {

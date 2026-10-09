@@ -1,31 +1,50 @@
-import { Navigation } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ChevronLeft, Clock, GitCompareArrows, Info, MapPin, Navigation, Route, Store } from 'lucide-react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { getStation } from '../../api/precioil/stations'
+import { BandBadge } from '../../components/ui/BandBadge'
+import { Button } from '../../components/ui/Button'
+import { Price } from '../../components/ui/Price'
 import { FUELS, findFuel } from '../../config/fuels'
 import { analytics } from '../../services/analytics'
 import { useSession } from '../../stores/session'
-import type { Station } from '../../types/domain'
-import { formatDateTime, formatRelativeTime } from '../../utils/datetime'
-import { formatDistance, formatMoney, formatPricePerLiter } from '../../utils/format'
+import { selectFuel } from '../fuel-selector/select-fuel'
+import type { ProvinceAverage, Station } from '../../types/domain'
+import { describeUpdate, formatDateTime } from '../../utils/datetime'
+import { formatDistance, formatMoney, formatPriceDelta, formatPricePerLiter } from '../../utils/format'
 import { openDirections } from '../../utils/navigation'
 import { openingLabel, openingStatus } from '../../utils/opening-hours'
-import type { StationCost } from '../../utils/best-station'
-import { Button } from '../../components/ui/Button'
+import type { RankedStation } from '../../utils/ranking'
+
+const HistorySection = lazy(() => import('../history/HistorySection').then((module) => ({ default: module.HistorySection })))
 
 interface StationDetailProps {
   station: Station
+  item: RankedStation | null
   fuelId: number
-  cost: StationCost | null
-  onBack: () => void
-  onHistory: () => void
-  onCompare: () => void
+  liters: number
+  average: ProvinceAverage | null
+  provinceName: string | null
+  now: Date
   compared: boolean
+  onBack: () => void
+  onCompare: () => void
 }
 
-export function StationDetail({ station, fuelId, cost, onBack, onHistory, onCompare, compared }: StationDetailProps) {
+export function StationDetail({
+  station,
+  item,
+  fuelId,
+  liters,
+  average,
+  provinceName,
+  now,
+  compared,
+  onBack,
+  onCompare,
+}: StationDetailProps) {
   const origin = useSession((state) => state.origin)
   const [fresh, setFresh] = useState<Station | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
+  const [detailFailed, setDetailFailed] = useState(false)
   const fuel = findFuel(fuelId)
 
   useEffect(() => {
@@ -33,140 +52,193 @@ export function StationDetail({ station, fuelId, cost, onBack, onHistory, onComp
     const controller = new AbortController()
     void getStation(station.id, origin, controller.signal)
       .then((next) => {
+        if (controller.signal.aborted) return
         setFresh(next)
-        setDetailError(next ? null : 'No hemos podido actualizar la ficha.')
+        setDetailFailed(next === null)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setDetailError('Mostramos los datos de la lista. La ficha no se ha podido actualizar.')
+        if (!controller.signal.aborted) setDetailFailed(true)
       })
     return () => controller.abort()
   }, [station.id, origin])
 
-  const current = fresh ? { ...fresh, distanceKm: station.distanceKm } : station
+  const current = fresh?.id === station.id ? { ...fresh, distanceKm: station.distanceKm } : station
   const selectedPrice = current.prices[fuel.field]
-  const updated = current.updatedAt ? formatRelativeTime(current.updatedAt) : null
+  const update = describeUpdate(current.updatedAt, now)
   const updatedExact = current.updatedAt ? formatDateTime(current.updatedAt) : null
+  const showName = current.name.localeCompare(current.brand, 'es', { sensitivity: 'base' }) !== 0
+  const delta = average && selectedPrice !== undefined ? selectedPrice - average.price : null
+  const cost = item?.cost ?? null
+  const place = [current.locality || current.municipality, current.province].filter(Boolean)
+  const uniquePlace = place.filter((value, index) => place.indexOf(value) === index).join(', ')
 
   return (
-    <div className="space-y-4">
-      <button type="button" className="text-sm font-semibold text-accent" onClick={onBack}>
-        Volver al listado
-      </button>
-      <header>
-        <p className="text-xs font-semibold tracking-[0.14em] text-muted uppercase">{current.brand}</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{current.name}</h2>
+    <article className="animate-fade-up" aria-labelledby="station-detail-title">
+      <header className="flex items-start gap-2">
+        <Button variant="ghost" size="icon" className="-ml-2" aria-label="Volver al listado" onClick={onBack}>
+          <ChevronLeft aria-hidden className="size-5" />
+        </Button>
+        <div className="min-w-0 flex-1 pt-1.5">
+          <h2 id="station-detail-title" className="truncate text-heading font-semibold tracking-tight">
+            {current.brand}
+          </h2>
+          {showName ? <p className="truncate text-body-sm text-muted">{current.name}</p> : null}
+        </div>
       </header>
-      <section className="rounded-3xl bg-bg p-4" aria-label="Precio oficial">
-        <p className="text-xs font-semibold tracking-wide text-muted uppercase">Precio oficial · {fuel.label}</p>
-        <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums">
-          {selectedPrice !== undefined ? formatPricePerLiter(selectedPrice) : 'No disponible'}
+
+      <section className="mt-4" aria-label="Precio">
+        <p className="text-body-sm font-medium text-muted">{fuel.label}</p>
+        <div className="mt-0.5 flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
+          {selectedPrice !== undefined ? (
+            <Price value={selectedPrice} size="xl" className={update?.freshness === 'stale' ? 'opacity-70' : ''} />
+          ) : (
+            <p className="text-heading font-semibold text-muted">No disponible</p>
+          )}
+          {item ? <BandBadge band={item.band} label={item.bandLabel} /> : null}
+        </div>
+        <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-body-sm text-muted">
+          <span className="tabular font-semibold text-ink">{formatDistance(current.distanceKm)}</span>
+          {uniquePlace ? <span>· {uniquePlace}</span> : null}
         </p>
-        <p className="mt-2 text-sm text-muted">{formatDistance(current.distanceKm)}</p>
+        <p
+          className={`mt-1 flex items-center gap-1.5 text-caption ${update?.freshness === 'stale' ? 'font-semibold text-mid' : 'text-muted'}`}
+          title={updatedExact ?? undefined}
+        >
+          <Clock aria-hidden className="size-3.5" />
+          {update ? update.label : 'Sin fecha de actualización'}
+        </p>
+        {delta !== null && provinceName ? (
+          <p className="mt-1 text-caption text-muted">
+            {formatPriceDelta(delta)} que la media de {provinceName}
+          </p>
+        ) : null}
       </section>
-      {cost?.fuelCostEur !== null && cost?.fuelCostEur !== undefined ? (
-        <section className="rounded-3xl border border-dashed border-line p-4" aria-label="Estimación de ahorro">
-          <p className="text-xs font-semibold tracking-wide text-muted uppercase">Estimación, no es un dato oficial</p>
-          <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <dt className="text-muted">Combustible</dt>
-              <dd className="font-semibold tabular-nums">{formatMoney(cost.fuelCostEur)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted">Desvío estimado</dt>
-              <dd className="font-semibold tabular-nums">{cost.travelCostEur === null ? '—' : formatMoney(cost.travelCostEur)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted">Coste neto</dt>
-              <dd className="font-semibold tabular-nums">{cost.netCostEur === null ? '—' : formatMoney(cost.netCostEur)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted">Frente a la cercana</dt>
-              <dd className="font-semibold tabular-nums">
-                {cost.netSavingVsBaselineEur === null ? '—' : formatMoney(cost.netSavingVsBaselineEur)}
-              </dd>
-            </div>
-          </dl>
+
+      <div className="mt-5 flex gap-2">
+        <Button
+          size="lg"
+          className="flex-1"
+          onClick={() => {
+            analytics.track('directions_open', { stationId: current.id, from: 'detail' })
+            openDirections(current.latitude, current.longitude)
+          }}
+        >
+          <Navigation aria-hidden className="size-4.5" />
+          Cómo llegar
+        </Button>
+        <Button
+          size="lg"
+          variant="secondary"
+          aria-pressed={compared}
+          className={compared ? 'border-accent text-accent' : ''}
+          onClick={onCompare}
+        >
+          <GitCompareArrows aria-hidden className="size-4.5" />
+          {compared ? 'Comparando' : 'Comparar'}
+        </Button>
+      </div>
+
+      {cost?.netCostEur !== null && cost?.netCostEur !== undefined ? (
+        <section className="mt-5 rounded-md bg-raised p-4" aria-label="Estimación">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-body-sm text-muted">Llenar {liters} L te cuesta</p>
+            <p className="tabular text-title font-semibold">{formatMoney(cost.netCostEur)}</p>
+          </div>
+          {cost.netSavingVsBaselineEur !== null && Math.abs(cost.netSavingVsBaselineEur) >= 0.01 ? (
+            <p className={`mt-1 text-body-sm font-medium ${cost.netSavingVsBaselineEur > 0 ? 'text-cheap' : 'text-muted'}`}>
+              {cost.netSavingVsBaselineEur > 0
+                ? `Ahorras ${formatMoney(cost.netSavingVsBaselineEur)} frente a la más cercana`
+                : `${formatMoney(-cost.netSavingVsBaselineEur)} más que la más cercana`}
+            </p>
+          ) : null}
+          <p className="mt-2 text-caption text-subtle">
+            Incluye {cost.travelCostEur === null ? 'el desvío' : `${formatMoney(cost.travelCostEur)} de desvío`}. Es una estimación.
+          </p>
         </section>
       ) : null}
-      <dl className="space-y-2 text-sm">
-        <div>
-          <dt className="text-muted">Dirección</dt>
-          <dd>
-            {current.address}
-            {current.postalCode ? `, ${current.postalCode}` : ''}
-            {current.locality ? ` · ${current.locality}` : ''}
-            {current.province ? ` · ${current.province}` : ''}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted">Coordenadas</dt>
-          <dd className="tabular-nums">
-            {current.latitude.toFixed(5)}, {current.longitude.toFixed(5)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted">Horario</dt>
-          <dd>
-            {current.schedule ?? 'No informado'} · {openingLabel(openingStatus(current.schedule))}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted">Actualización</dt>
-          <dd>{updated ? `Actualizado ${updated}` : 'Sin fecha de actualización'}{updatedExact ? ` (${updatedExact})` : ''}</dd>
-        </div>
+
+      <dl className="mt-5 divide-y divide-line border-y border-line">
+        <InfoRow icon={<MapPin aria-hidden className="size-4" />} label="Dirección">
+          {current.address}
+          {current.postalCode ? `, ${current.postalCode}` : ''}
+        </InfoRow>
+        <InfoRow icon={<Clock aria-hidden className="size-4" />} label="Horario">
+          <span className="font-medium">{openingLabel(openingStatus(current.schedule, now))}</span>
+          {current.schedule ? <span className="text-muted"> · {current.schedule}</span> : null}
+        </InfoRow>
         {marginLabel(current.margin) ? (
-          <div>
-            <dt className="text-muted">Vía</dt>
-            <dd>{marginLabel(current.margin)}</dd>
-          </div>
-        ) : null}
-        {current.saleType === 'restricted' ? (
-          <div>
-            <dt className="text-muted">Venta</dt>
-            <dd>Restringida</dd>
-          </div>
+          <InfoRow icon={<Route aria-hidden className="size-4" />} label="Vía">
+            {marginLabel(current.margin)}
+          </InfoRow>
         ) : null}
         {current.services ? (
-          <div>
-            <dt className="text-muted">Servicios</dt>
-            <dd>{current.services}</dd>
-          </div>
+          <InfoRow icon={<Store aria-hidden className="size-4" />} label="Servicios">
+            {current.services}
+          </InfoRow>
+        ) : null}
+        {current.saleType === 'restricted' ? (
+          <InfoRow icon={<Info aria-hidden className="size-4" />} label="Venta">
+            Restringida a socios o flotas
+          </InfoRow>
         ) : null}
       </dl>
-      <section>
-        <h3 className="text-sm font-semibold">Todos los combustibles</h3>
-        <ul className="mt-2 divide-y divide-line">
-          {FUELS.map((item) => {
-            const price = current.prices[item.field]
+
+      <section className="mt-6" aria-labelledby="other-fuels">
+        <h3 id="other-fuels" className="text-title font-semibold">
+          Precios en esta gasolinera
+        </h3>
+        <ul className="mt-2">
+          {FUELS.map((entry) => {
+            const price = current.prices[entry.field]
             if (price === undefined) return null
-            const highlighted = item.id === fuelId
+            const highlighted = entry.id === fuelId
             return (
-              <li key={item.id} className={`flex items-center justify-between py-2 text-sm ${highlighted ? 'font-semibold' : ''}`}>
-                <span>{item.label}</span>
-                <span className="tabular-nums">{formatPricePerLiter(price)}</span>
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  aria-current={highlighted || undefined}
+                  className={`flex min-h-11 w-full items-center justify-between rounded-sm px-3 text-body transition-colors ${
+                    highlighted ? 'bg-accent-soft font-semibold text-ink' : 'hover:bg-raised'
+                  }`}
+                  onClick={() => selectFuel(entry.id)}
+                >
+                  <span>{entry.label}</span>
+                  <span className="tabular">{formatPricePerLiter(price)}</span>
+                </button>
               </li>
             )
           })}
         </ul>
       </section>
-      {detailError ? <p className="text-sm text-muted">{detailError}</p> : null}
-      <div className="grid gap-2">
-        <Button
-          onClick={() => {
-            analytics.track('directions_open', { stationId: current.id })
-            openDirections(current.latitude, current.longitude)
-          }}
-        >
-          <Navigation aria-hidden className="size-4" />
-          Cómo llegar
-        </Button>
-        <Button variant="secondary" onClick={onHistory}>
-          Ver histórico
-        </Button>
-        <Button variant="ghost" aria-pressed={compared} onClick={onCompare}>
-          {compared ? 'Quitar de la comparación' : 'Añadir a la comparación'}
-        </Button>
+
+      <Suspense fallback={<HistoryFallback />}>
+        <HistorySection station={current} fuelId={fuelId} />
+      </Suspense>
+
+      {detailFailed ? (
+        <p className="mt-4 text-caption text-subtle">Mostramos los datos del listado. La ficha no se ha podido actualizar.</p>
+      ) : null}
+    </article>
+  )
+}
+
+function InfoRow({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3 py-3">
+      <span className="mt-0.5 text-muted">{icon}</span>
+      <div className="min-w-0">
+        <dt className="sr-only">{label}</dt>
+        <dd className="text-body">{children}</dd>
       </div>
+    </div>
+  )
+}
+
+function HistoryFallback() {
+  return (
+    <div className="mt-6" aria-hidden>
+      <div className="skeleton h-5 w-40" />
+      <div className="skeleton mt-4 h-36 w-full rounded-md" />
     </div>
   )
 }
@@ -174,9 +246,9 @@ export function StationDetail({ station, fuelId, cost, onBack, onHistory, onComp
 function marginLabel(margin: Station['margin']): string | null {
   switch (margin) {
     case 'right':
-      return 'Margen derecho'
+      return 'Margen derecho de la vía'
     case 'left':
-      return 'Margen izquierdo'
+      return 'Margen izquierdo de la vía'
     case 'none':
     case 'unknown':
       return null

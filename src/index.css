@@ -2,76 +2,180 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens.
+ * Spacing uses Tailwind's 4px scale (1 = 4px). Radius, elevation, type and
+ * motion are limited to the steps below so every component draws from the
+ * same small set.
+ */
 @theme inline {
   --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-raised: var(--raised);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-accent-contrast: var(--accent-contrast);
   --color-cheap: var(--cheap);
+  --color-cheap-soft: var(--cheap-soft);
   --color-mid: var(--mid);
+  --color-mid-soft: var(--mid-soft);
   --color-high: var(--high);
+  --color-high-soft: var(--high-soft);
+  --color-danger: var(--danger);
+
+  /* Radius: controls (sm) · cards and inputs (md) · sheets and panels (lg) · pills (full). */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  /* Elevation: resting card (sm) · floating control (md) · sheet and popover (lg). */
+  --shadow-sm: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+
+  /* Type scale: caption · body-sm · body · title · heading · display. */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-body-sm: 0.8125rem;
+  --text-body-sm--line-height: 1.125rem;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-title: 1.0625rem;
+  --text-title--line-height: 1.5rem;
+  --text-heading: 1.375rem;
+  --text-heading--line-height: 1.75rem;
+  --text-display: 2.25rem;
+  --text-display--line-height: 2.5rem;
+
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 :root {
-  --bg: #f3f0e8;
-  --surface: #fffcf8;
-  --ink: #1c1915;
-  --muted: #6f675e;
-  --line: #e4ddd2;
-  --accent: #0c6b5c;
-  --accent-contrast: #f4fffb;
-  --shadow: 0 10px 28px rgba(48, 38, 22, 0.08);
-  --cheap: #1b7a46;
-  --mid: #9a6700;
-  --high: #b42318;
-  --map-bg: #e7e1d6;
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --raised: #faf9f7;
+  --ink: #17140f;
+  --muted: #5f5850;
+  --subtle: #8a8279;
+  --line: #e8e4dd;
+  --line-strong: #d5cfc6;
+  --accent: #0b6b5a;
+  --accent-soft: #e3f1ed;
+  --accent-contrast: #ffffff;
+  --cheap: #187243;
+  --cheap-soft: #e2f3e8;
+  --mid: #8a5a00;
+  --mid-soft: #fbf0d9;
+  --high: #b0281b;
+  --high-soft: #fbe6e3;
+  --danger: #b0281b;
+  --map-bg: #e9e7e3;
+  --elev-1: 0 1px 2px rgb(23 20 15 / 0.06);
+  --elev-2: 0 1px 2px rgb(23 20 15 / 0.06), 0 4px 12px rgb(23 20 15 / 0.08);
+  --elev-3: 0 -1px 0 rgb(23 20 15 / 0.04), 0 8px 32px rgb(23 20 15 / 0.14);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #101412;
-  --surface: #1a1f1c;
-  --ink: #f4f1ea;
-  --muted: #b7aea4;
-  --line: #2d3430;
-  --accent: #3dbea6;
-  --accent-contrast: #06221c;
-  --shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
-  --cheap: #8ee0b0;
-  --mid: #f3c56a;
-  --high: #ff9b8d;
-  --map-bg: #0d100f;
+  --bg: #0e1110;
+  --surface: #171b19;
+  --raised: #1d2220;
+  --ink: #f1efea;
+  --muted: #b1aba3;
+  --subtle: #8b867f;
+  --line: #29302d;
+  --line-strong: #39423e;
+  --accent: #4cc7ad;
+  --accent-soft: #12312a;
+  --accent-contrast: #04211b;
+  --cheap: #6fd69a;
+  --cheap-soft: #133222;
+  --mid: #f0c062;
+  --mid-soft: #33290f;
+  --high: #ff9285;
+  --high-soft: #3a1a16;
+  --danger: #ff9285;
+  --map-bg: #232526;
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --elev-2: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.35);
+  --elev-3: 0 -1px 0 rgb(255 255 255 / 0.04), 0 8px 32px rgb(0 0 0 / 0.5);
   color-scheme: dark;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  font-family: var(--font-sans);
-  text-rendering: optimizeLegibility;
+@layer components {
+  /* Thin, quiet scrollbars for the side panel and lists. */
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  .scroll-area::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--line-strong) padding-box;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
 }
 
-button,
-input,
-select {
-  font: inherit;
-}
-
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* ---------- Map ---------- */
 
 .leaflet-container {
   height: 100%;
@@ -81,83 +185,266 @@ select {
 }
 
 .leaflet-control-attribution {
-  background: color-mix(in srgb, var(--surface) 90%, transparent) !important;
-  color: var(--muted) !important;
+  border-radius: 6px 0 0 0;
+  background: color-mix(in srgb, var(--surface) 82%, transparent) !important;
+  color: var(--subtle) !important;
   font-size: 10px !important;
+  line-height: 1.4;
   max-width: 70%;
 }
 
 .leaflet-control-attribution a {
-  color: var(--ink) !important;
+  color: var(--muted) !important;
 }
 
+.leaflet-bar {
+  overflow: hidden;
+  border: none !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--elev-2) !important;
+}
+
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  width: 40px !important;
+  height: 40px !important;
+  border-color: var(--line) !important;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  font-size: 20px !important;
+  line-height: 40px !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--raised) !important;
+}
+
+.leaflet-bar a.leaflet-disabled {
+  color: var(--subtle) !important;
+}
+
+/* Labels sit above the price markers' shadow but under the markers themselves. */
+.leaflet-labels-pane {
+  pointer-events: none;
+}
+
+/* The marker element is a zero-size anchor at the station's exact coordinates;
+   the visible pin is positioned relative to it so its tip lands on the point. */
 .price-marker-icon {
   background: transparent;
   border: none;
 }
 
-.price-marker {
+.price-pin {
+  --pin-bg: var(--surface);
+  --pin-fg: var(--ink);
+  --pin-border: var(--line-strong);
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  transition: transform 160ms var(--ease-out-soft);
+}
+
+.price-pin__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--pin-border);
+  border-radius: 999px;
+  background: var(--pin-bg);
+  color: var(--pin-fg);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: var(--elev-2);
+}
+
+.price-pin__band {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--band-soft);
+  color: var(--band);
+}
+
+.price-pin__band svg {
+  width: 10px;
+  height: 10px;
+}
+
+.price-pin__stem {
+  width: 2px;
+  height: 6px;
+  background: var(--pin-border);
+}
+
+.price-pin__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: -1px;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--band);
+  box-shadow: var(--elev-1);
+}
+
+.price-pin[data-band='cheap'] {
+  --band: var(--cheap);
+  --band-soft: var(--cheap-soft);
+}
+
+.price-pin[data-band='mid'] {
+  --band: var(--mid);
+  --band-soft: var(--mid-soft);
+}
+
+.price-pin[data-band='high'] {
+  --band: var(--high);
+  --band-soft: var(--high-soft);
+}
+
+.price-pin[data-band='unknown'] {
+  --band: var(--subtle);
+  --band-soft: var(--raised);
+}
+
+.price-pin[data-closed='true'] .price-pin__label {
+  color: var(--subtle);
+}
+
+.price-pin[data-best='true'] {
+  --pin-border: var(--accent);
+}
+
+.price-marker-icon:hover .price-pin {
+  transform: translateX(-50%) scale(1.06);
+}
+
+.price-pin[data-selected='true'] {
+  --pin-bg: var(--ink);
+  --pin-fg: var(--surface);
+  --pin-border: var(--ink);
+  transform: translateX(-50%) scale(1.14);
+}
+
+.price-pin[data-selected='true'] .price-pin__band {
+  background: var(--surface);
+}
+
+.price-marker-icon:focus-visible {
+  outline: none;
+}
+
+.price-marker-icon:focus-visible .price-pin__label {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Cluster: shows the cheapest price inside it, so a zoomed-out map still answers "where is it cheap". */
+.reposta-cluster {
+  background: transparent;
+  border: none;
+}
+
+.cluster-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: max-content;
-  border: 1px solid var(--line);
+  height: 28px;
+  padding: 0 4px 0 10px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
-  padding: 3px 8px 3px 7px;
   font-size: 12px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  box-shadow: var(--shadow);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  box-shadow: var(--elev-2);
 }
 
-.price-marker::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 999px;
-  background: var(--band, var(--mid));
-}
-
-.price-marker[data-band='cheap'] {
-  --band: var(--cheap);
-}
-
-.price-marker[data-band='mid'] {
-  --band: var(--mid);
-  border-radius: 9px;
-}
-
-.price-marker[data-band='mid']::before {
-  border-radius: 1px;
-  transform: rotate(45deg);
-}
-
-.price-marker[data-band='high'] {
-  --band: var(--high);
-  border-radius: 7px;
-}
-
-.price-marker[data-band='high']::before {
-  border-radius: 2px;
-}
-
-.price-marker[data-selected='true'] {
-  box-shadow: 0 0 0 2px var(--accent), var(--shadow);
-}
-
-.reposta-cluster {
+.cluster-pin__count {
   display: grid;
   place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-size: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
   font-weight: 700;
-  box-shadow: var(--shadow);
+}
+
+.origin-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #2563eb;
+  box-shadow: 0 0 0 6px rgb(37 99 235 / 0.18), var(--elev-2);
+}
+
+.dark .origin-dot {
+  border-color: #e8eefc;
+  background: #4f8bff;
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 200ms var(--ease-out-soft) both;
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@layer components {
+  .skeleton {
+    border-radius: 6px;
+    background: var(--line);
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { findFuel } from '../config/fuels'
+import { FUELS, findFuel } from '../config/fuels'
 import { usePreferences } from '../stores/preferences'
 import { useSession } from '../stores/session'
 import { calculateBestStation, type CostAssumptions } from '../utils/best-station'
@@ -10,10 +10,16 @@ import { fold } from '../utils/text'
 
 export interface VisibleStations {
   ranked: RankedStation[]
+  /** Fuels sold by at least one loaded station, for the fuel selector. */
+  availableFuelIds: ReadonlySet<number>
+  /** Active filters beyond fuel, radius and sort, for the "clear" affordance. */
+  activeFilters: number
   brands: string[]
   withFuelCount: number
   recommendation: RecommendationCopy | null
   assumptions: CostAssumptions
+  /** Clock used for opening hours and freshness, ticking once a minute. */
+  now: Date
 }
 
 export function useVisibleStations(): VisibleStations {
@@ -32,6 +38,11 @@ export function useVisibleStations(): VisibleStations {
     const timer = window.setInterval(() => setNow(new Date()), 60_000)
     return () => window.clearInterval(timer)
   }, [])
+
+  const availableFuelIds = useMemo(
+    () => new Set(FUELS.filter((fuel) => stations.some((station) => station.prices[fuel.field] !== undefined)).map((fuel) => fuel.id)),
+    [stations],
+  )
 
   return useMemo(() => {
     const fuel = findFuel(fuelId)
@@ -64,6 +75,8 @@ export function useVisibleStations(): VisibleStations {
     })
     return {
       ranked,
+      availableFuelIds,
+      activeFilters: Number(openNow) + Number(brand !== null) + Number(maxPrice !== null),
       brands: availableBrands(offered),
       withFuelCount: offered.length,
       recommendation: describeRecommendation(
@@ -73,9 +86,11 @@ export function useVisibleStations(): VisibleStations {
         liters,
       ),
       assumptions,
+      now,
     }
   }, [
     stations,
+    availableFuelIds,
     fuelId,
     sort,
     openNow,

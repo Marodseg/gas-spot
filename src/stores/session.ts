@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { AppError, LoadStatus, Panel, Place, ProvinceAverage, Station } from '../types/domain'
 
+/** Mobile bottom sheet positions. Ignored by the desktop sidebar. */
+export type SheetSnap = 'collapsed' | 'half' | 'full'
+
 interface SessionState {
   origin: Place | null
   stations: Station[]
@@ -13,6 +16,9 @@ interface SessionState {
   provinceName: string | null
   searchHere: { latitude: number; longitude: number } | null
   retryToken: number
+  sheet: SheetSnap
+  locating: boolean
+  locateError: AppError | null
   setOrigin: (origin: Place) => void
   setLoading: (clearStations: boolean) => void
   setStations: (stations: Station[]) => void
@@ -20,10 +26,11 @@ interface SessionState {
   selectStation: (id: number | null) => void
   setPanel: (panel: Panel) => void
   toggleCompare: (id: number) => void
-  clearCompare: () => void
   setProvinceAverage: (provinceName: string | null, average: ProvinceAverage | null) => void
   setSearchHere: (point: { latitude: number; longitude: number } | null) => void
   retry: () => void
+  setSheet: (sheet: SheetSnap) => void
+  setLocating: (locating: boolean, error?: AppError | null) => void
 }
 
 const COMPARE_LIMIT = 3
@@ -40,7 +47,11 @@ export const useSession = create<SessionState>((set) => ({
   provinceName: null,
   searchHere: null,
   retryToken: 0,
-  setOrigin: (origin) => set({ origin, searchHere: null, panel: 'browse', selectedId: null }),
+  sheet: 'half',
+  locating: false,
+  locateError: null,
+  setOrigin: (origin) =>
+    set({ origin, searchHere: null, panel: 'browse', selectedId: null, locateError: null }),
   setLoading: (clearStations) =>
     set((state) => ({
       status: 'loading',
@@ -62,7 +73,13 @@ export const useSession = create<SessionState>((set) => ({
       }
     }),
   setError: (error) => set({ status: 'error', error }),
-  selectStation: (id) => set({ selectedId: id, panel: id === null ? 'browse' : 'detail' }),
+  selectStation: (id) =>
+    set((state) => ({
+      selectedId: id,
+      panel: id === null ? 'browse' : 'detail',
+      // Opening a station from a collapsed sheet raises it so the detail is readable.
+      sheet: id !== null && state.sheet === 'collapsed' ? 'half' : state.sheet,
+    })),
   setPanel: (panel) => set({ panel }),
   toggleCompare: (id) =>
     set((state) => {
@@ -73,8 +90,9 @@ export const useSession = create<SessionState>((set) => ({
       if (state.compareIds.length >= COMPARE_LIMIT) return state
       return { compareIds: [...state.compareIds, id] }
     }),
-  clearCompare: () => set({ compareIds: [], panel: 'browse' }),
   setProvinceAverage: (provinceName, provinceAverage) => set({ provinceName, provinceAverage }),
   setSearchHere: (searchHere) => set({ searchHere }),
   retry: () => set((state) => ({ retryToken: state.retryToken + 1 })),
+  setSheet: (sheet) => set({ sheet }),
+  setLocating: (locating, error = null) => set({ locating, locateError: error }),
 }))
