@@ -1,42 +1,50 @@
-import { Search } from 'lucide-react'
-import { useEffect, useId, useState } from 'react'
+import { LoaderCircle, LocateFixed, MapPin, Search, X } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { searchPlaces } from '../../api/geocode'
 import { useSession } from '../../stores/session'
 import type { Place } from '../../types/domain'
-import { choosePlace } from './choose-place'
+import { choosePlace, requestLocation } from './choose-place'
 
-export function PlaceSearch() {
+const MIN_QUERY = 2
+
+interface PlaceSearchProps {
+  /** Floating over the map (mobile) gets an elevated surface. */
+  floating?: boolean
+}
+
+export function PlaceSearch({ floating = false }: PlaceSearchProps) {
   const origin = useSession((state) => state.origin)
+  const locating = useSession((state) => state.locating)
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
-  const [result, setResult] = useState<{ query: string; places: Place[]; error: string | null }>({
+  const [result, setResult] = useState<{ query: string; places: Place[]; failed: boolean }>({
     query: '',
     places: [],
-    error: null,
+    failed: false,
   })
+  const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
-  const debounced = useDebounced(query, 350)
+  const debounced = useDebounced(query, 300)
   const queryKey = debounced.trim()
-  const results = result.query === queryKey ? result.places : []
-  const error = result.query === queryKey ? result.error : null
+  const typed = query.trim()
+  const settled = result.query === queryKey && queryKey === typed
+  // Keep the previous suggestions on screen while the next query resolves.
+  const results = typed.length >= MIN_QUERY && result.query.length >= MIN_QUERY ? result.places : []
+  const searching = typed.length >= MIN_QUERY && !settled
+  const showPanel = open && typed.length >= MIN_QUERY
 
   useEffect(() => {
-    if (queryKey.length < 2) return undefined
+    if (queryKey.length < MIN_QUERY) return undefined
     const controller = new AbortController()
     void searchPlaces(queryKey, origin ?? undefined, controller.signal)
       .then((places) => {
         setActive(0)
-        setOpen(true)
-        setResult({
-          query: queryKey,
-          places,
-          error: places.length === 0 ? 'No hay coincidencias en España.' : null,
-        })
+        setResult({ query: queryKey, places, failed: false })
       })
       .catch(() => {
         if (controller.signal.aborted) return
-        setResult({ query: queryKey, places: [], error: 'No hemos podido buscar esa dirección.' })
+        setResult({ query: queryKey, places: [], failed: true })
       })
     return () => controller.abort()
   }, [queryKey, origin])
@@ -45,6 +53,7 @@ export function PlaceSearch() {
     choosePlace(place)
     setQuery('')
     setOpen(false)
+    inputRef.current?.blur()
   }
 
   return (
@@ -52,21 +61,38 @@ export function PlaceSearch() {
       <label className="sr-only" htmlFor={`${listId}-input`}>
         Buscar ciudad, dirección o código postal
       </label>
-      <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface px-3 shadow-sm">
-        <Search aria-hidden className="size-4 shrink-0 text-muted" />
+      <div
+        className={`flex h-12 items-center gap-2 rounded-full border bg-surface pr-1 pl-4 transition-shadow duration-150 focus-within:border-accent ${
+          floating ? 'border-transparent shadow-md' : 'border-line-strong'
+        }`}
+      >
+        {searching ? (
+          <LoaderCircle aria-hidden className="size-4.5 shrink-0 animate-spin text-muted" />
+        ) : (
+          <Search aria-hidden className="size-4.5 shrink-0 text-muted" />
+        )}
         <input
+          ref={inputRef}
           id={`${listId}-input`}
           role="combobox"
-          aria-expanded={open}
+          type="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          aria-expanded={showPanel}
           aria-controls={listId}
           aria-autocomplete="list"
+          aria-activedescendant={showPanel && results[active] ? `${listId}-${active}` : undefined}
           value={query}
-          placeholder={origin?.label ?? 'Ciudad, dirección o código postal'}
-          className="min-h-11 w-full bg-transparent text-sm outline-none placeholder:text-muted"
-          onChange={(event) => setQuery(event.target.value)}
-          onFocus={() => {
-            if (results.length > 0) setOpen(true)
+          placeholder={origin ? origin.label : 'Buscar ciudad o dirección'}
+          className={`h-full min-w-0 flex-1 bg-transparent text-body outline-none [&::-webkit-search-cancel-button]:hidden ${
+            origin ? 'font-medium placeholder:text-ink' : 'placeholder:text-subtle'
+          }`}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setOpen(true)
           }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault()
@@ -82,29 +108,66 @@ export function PlaceSearch() {
             }
           }}
         />
+        {query ? (
+          <button
+            type="button"
+            aria-label="Borrar búsqueda"
+            className="grid size-10 shrink-0 place-items-center rounded-full text-muted hover:bg-ink/6"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setQuery('')
+              inputRef.current?.focus()
+            }}
+          >
+            <X aria-hidden className="size-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={locating ? 'Buscando tu ubicación' : 'Usar mi ubicación'}
+            title="Usar mi ubicación"
+            disabled={locating}
+            className={`grid size-10 shrink-0 place-items-center rounded-full hover:bg-ink/6 disabled:opacity-60 ${
+              origin?.source === 'geolocation' ? 'text-accent' : 'text-muted'
+            }`}
+            onClick={() => void requestLocation()}
+          >
+            {locating ? (
+              <LoaderCircle aria-hidden className="size-4.5 animate-spin" />
+            ) : (
+              <LocateFixed aria-hidden className="size-4.5" />
+            )}
+          </button>
+        )}
       </div>
-      {error ? <p className="px-2 pt-1 text-xs text-muted">{error}</p> : null}
-      {open && results.length > 0 ? (
-        <ul
-          id={listId}
-          role="listbox"
-          className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-2xl border border-line bg-surface p-1 shadow-lg"
-        >
-          {results.map((place, index) => (
-            <li key={`${place.label}-${place.latitude}`} role="presentation">
-              <button
-                type="button"
-                role="option"
-                aria-selected={index === active}
-                className={`w-full rounded-xl px-3 py-2 text-left text-sm ${index === active ? 'bg-bg' : ''}`}
-                onMouseEnter={() => setActive(index)}
-                onClick={() => select(place)}
-              >
-                {place.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {showPanel ? (
+        <div className="animate-fade-up absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-md border border-line bg-surface shadow-lg">
+          {results.length > 0 ? (
+            <ul id={listId} role="listbox" aria-label="Lugares" className="scroll-area max-h-72 overflow-auto p-1">
+              {results.map((place, index) => (
+                <li
+                  key={`${place.label}-${place.latitude}`}
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={index === active}
+                  className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-sm px-3 py-2 text-body ${
+                    index === active ? 'bg-raised' : ''
+                  }`}
+                  onMouseEnter={() => setActive(index)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => select(place)}
+                >
+                  <MapPin aria-hidden className="size-4 shrink-0 text-muted" />
+                  <span className="truncate">{place.label}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p id={listId} role="status" className="px-4 py-3 text-body-sm text-muted">
+              {searching ? 'Buscando…' : result.failed ? 'No hemos podido buscar. Revisa tu conexión.' : 'Sin coincidencias en España.'}
+            </p>
+          )}
+        </div>
       ) : null}
     </div>
   )

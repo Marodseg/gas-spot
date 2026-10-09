@@ -1,27 +1,42 @@
-import type { AppErrorCode } from '../types/domain'
+import type { AppError, AppErrorCode } from '../types/domain'
 import { assertNever } from './assert'
 
-export function messageFor(code: AppErrorCode): string {
+export interface ErrorCopy {
+  title: string
+  message: string
+}
+
+/** User-facing copy for each failure. Technical detail travels separately in `AppError.detail`. */
+export function copyFor(code: AppErrorCode): ErrorCopy {
   switch (code) {
     case 'unauthorized':
-      return 'La clave de la API no es válida. Revisa que sea una browser key de Precioil autorizada para este dominio.'
+      return {
+        title: 'Servicio no disponible',
+        message: 'Ahora mismo no podemos consultar los precios desde esta web. Inténtalo más tarde.',
+      }
     case 'not_found':
-      return 'No hemos encontrado esa gasolinera.'
+      return { title: 'Sin resultados', message: 'No hemos encontrado esa gasolinera.' }
     case 'rate_limit':
-      return 'La API ha limitado temporalmente las consultas. Espera unos segundos.'
+      return { title: 'Demasiadas consultas', message: 'Espera unos segundos y vuelve a intentarlo.' }
     case 'timeout':
-      return 'La consulta ha tardado demasiado. Inténtalo de nuevo.'
+      return { title: 'La consulta ha tardado demasiado', message: 'Puede ser la conexión. Vuelve a intentarlo.' }
     case 'network':
-      return 'No hemos podido conectar con Precioil. Revisa tu conexión e inténtalo de nuevo.'
+      return { title: 'Sin conexión', message: 'Revisa tu conexión a internet y vuelve a intentarlo.' }
     case 'invalid_response':
-      return 'La respuesta de la API está incompleta. Inténtalo de nuevo.'
     case 'server':
-      return 'No hemos podido cargar las gasolineras. Inténtalo de nuevo.'
+      return { title: 'No hemos podido cargar los precios', message: 'El servicio de precios ha fallado. Vuelve a intentarlo.' }
     case 'geolocation_denied':
-      return 'No hemos podido obtener tu ubicación. Puedes buscar una ciudad manualmente.'
+      return {
+        title: 'Ubicación desactivada',
+        message: 'Busca una ciudad o dirección, o permite la ubicación en tu navegador.',
+      }
     case 'geolocation_unavailable':
-      return 'Tu navegador no ha podido determinar la ubicación. Busca una ciudad o una dirección.'
+      return { title: 'No encontramos tu ubicación', message: 'Busca una ciudad, dirección o código postal.' }
     default:
       return assertNever(code)
   }
+}
+
+export function appError(code: AppErrorCode, detail: string | null = null): AppError {
+  return { code, ...copyFor(code), detail }
 }

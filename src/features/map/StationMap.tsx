@@ -1,20 +1,40 @@
-import { Map as MapLibreMap, Marker, setWorkerUrl, type GeoJSONSource, type MapSourceDataEvent } from 'maplibre-gl'
+import {
+  Map as MapLibreMap,
+  Marker,
+  NavigationControl,
+  setWorkerUrl,
+  type GeoJSONSource,
+  type MapSourceDataEvent,
+} from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import type { FeatureCollection, Point } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import type { Feature, FeatureCollection, Point, Polygon } from 'geojson'
 import { useEffect, useRef } from 'react'
-
-setWorkerUrl(maplibreWorkerUrl)
 import type { Place } from '../../types/domain'
+import { haversineKm, zoomForRadius } from '../../utils/distance'
 import { formatPrice } from '../../utils/format'
 import type { RankedStation } from '../../utils/ranking'
-import { haversineKm, zoomForRadius } from '../../utils/distance'
+import { clusterHtml, clusterLabel, markerHtml, markerLabel } from './markers'
+
+setWorkerUrl(maplibreWorkerUrl)
 
 const SPAIN = { latitude: 40.2, longitude: -3.6 }
-const LIGHT_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
-const DARK_STYLE = 'https://tiles.openfreemap.org/styles/dark'
-const SOURCE_ID = 'stations'
-const ANCHOR_LAYER_ID = 'stations-anchor'
+// OpenFreeMap: OpenStreetMap vector tiles without an API key. Positron is a
+// quiet basemap so the price pins carry the colour; Dark is its night twin.
+const STYLES = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+} as const
+const STATIONS = 'stations'
+const RADIUS = 'search-radius'
+/** Above this zoom every station is drawn on its own. */
+const CLUSTER_MAX_ZOOM = 14
+
+/** Pixels of the map covered by floating UI (top bar, bottom sheet). */
+export interface MapInsets {
+  top: number
+  bottom: number
+}
 
 interface StationMapProps {
   origin: Place | null
@@ -22,28 +42,29 @@ interface StationMapProps {
   selectedId: number | null
   radiusKm: number
   dark: boolean
+  insets: MapInsets
+  /** False until the floating UI has been measured, so the first framing accounts for it. */
+  insetsReady: boolean
+  showZoom: boolean
   onSelect: (id: number) => void
   onSearchHere: (point: { latitude: number; longitude: number } | null) => void
 }
 
-interface MapSnapshot {
-  stations: RankedStation[]
-  selectedId: number | null
+interface MarkerEntry {
+  marker: Marker
+  html: string
+}
+
+/** Latest props, read by MapLibre event handlers that are registered once. */
+interface Live {
   origin: Place | null
   radiusKm: number
+  dark: boolean
+  insets: MapInsets
+  selectedId: number | null
+  byId: Map<number, RankedStation>
   onSelect: (id: number) => void
   onSearchHere: (point: { latitude: number; longitude: number } | null) => void
-}
-
-interface MarkerFields {
-  cluster: unknown
-  clusterId: unknown
-  pointCount: unknown
-  pointCountLabel: unknown
-  id: unknown
-  price: unknown
-  band: unknown
-  title: unknown
 }
 
 export function StationMap({
@@ -52,335 +73,379 @@ export function StationMap({
   selectedId,
   radiusKm,
   dark,
+  insets,
+  insetsReady,
+  showZoom,
   onSelect,
   onSearchHere,
 }: StationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
-  const markersRef = useRef<globalThis.Map<string, Marker>>(new globalThis.Map())
+  const markersRef = useRef(new Map<string, MarkerEntry>())
   const originMarkerRef = useRef<Marker | null>(null)
-  const styleRef = useRef(dark ? DARK_STYLE : LIGHT_STYLE)
-  const snapshotRef = useRef<MapSnapshot>({
-    stations,
-    selectedId,
+  const signatureRef = useRef('')
+  const lastFlyRef = useRef('')
+  const live = useRef<Live>({
     origin,
     radiusKm,
+    dark,
+    insets,
+    selectedId,
+    byId: new Map(),
     onSelect,
     onSearchHere,
   })
   useEffect(() => {
-    snapshotRef.current = { stations, selectedId, origin, radiusKm, onSelect, onSearchHere }
+    Object.assign(live.current, { origin, radiusKm, dark, insets, selectedId, onSelect, onSearchHere })
   })
 
+  // Create the map once.
   useEffect(() => {
     const container = containerRef.current
-    if (!container) return
-    const snapshot = snapshotRef.current
-    const center = snapshot.origin ?? SPAIN
+    if (!container) return undefined
+    const initial = live.current
+    const center = initial.origin ?? SPAIN
     const map = new MapLibreMap({
       container,
-      style: styleRef.current,
+      style: initial.dark ? STYLES.dark : STYLES.light,
       center: [center.longitude, center.latitude],
-      zoom: snapshot.origin ? zoomForRadius(snapshot.radiusKm) : 6,
+      zoom: initial.origin ? radiusZoom(initial.radiusKm) : 5,
       attributionControl: { compact: true },
       fadeDuration: 0,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
     })
+    map.touchZoomRotate.disableRotation()
     mapRef.current = map
+    const markers = markersRef.current
+    const sync = () => syncMarkers(map, markers, live.current)
 
-    const refreshMarkers = () => {
-      syncStationMarkers(map, markersRef.current, snapshotRef)
-    }
-    const onMoveEnd = () => {
-      const current = snapshotRef.current
+    // Only moves the user makes (drag, wheel, pinch) offer "Buscar en esta zona";
+    // programmatic moves such as revealing a selected station do not.
+    let userMoved = false
+    map.on('movestart', (event) => {
+      if (event.originalEvent) userMoved = true
+    })
+    map.on('moveend', () => {
+      sync()
+      const current = live.current
       if (!current.origin) {
         current.onSearchHere(null)
         return
       }
-      const point = map.getCenter()
-      const moved = haversineKm(current.origin, { latitude: point.lat, longitude: point.lng })
-      if (moved > Math.max(0.45, current.radiusKm * 0.35)) {
-        current.onSearchHere({ latitude: point.lat, longitude: point.lng })
-      } else {
-        current.onSearchHere(null)
-      }
-      refreshMarkers()
-    }
-
-    map.on('moveend', onMoveEnd)
+      if (!userMoved) return
+      userMoved = false
+      const middle = visibleCenter(map, current.insets)
+      const moved = haversineKm(current.origin, { latitude: middle.lat, longitude: middle.lng })
+      current.onSearchHere(
+        moved > Math.max(0.6, current.radiusKm * 0.45) ? { latitude: middle.lat, longitude: middle.lng } : null,
+      )
+    })
     map.on('sourcedata', (event: MapSourceDataEvent) => {
-      if (event.sourceId !== SOURCE_ID || !event.isSourceLoaded) return
-      refreshMarkers()
+      if (event.sourceId === STATIONS && event.isSourceLoaded) sync()
     })
+    // Runs on the first load and after every theme switch (setStyle drops sources and layers).
     map.on('style.load', () => {
-      mountStationSource(map, snapshotRef.current.stations)
-      placeOriginMarker(map, originMarkerRef, snapshotRef.current.origin)
-      refreshMarkers()
+      addLayers(map, live.current)
+      if (setStationData(map, [...live.current.byId.values()])) sync()
     })
-
-    const observer = new ResizeObserver(() => {
-      map.resize()
-    })
-    observer.observe(container)
-    const markers = markersRef.current
 
     return () => {
-      observer.disconnect()
-      map.remove()
-      mapRef.current = null
       markers.clear()
       originMarkerRef.current = null
+      // A new map instance (StrictMode remount, layout switch) must be framed again.
+      lastFlyRef.current = ''
+      signatureRef.current = ''
+      map.remove()
+      mapRef.current = null
     }
   }, [])
 
   useEffect(() => {
     const map = mapRef.current
-    const nextStyle = dark ? DARK_STYLE : LIGHT_STYLE
-    if (!map || styleRef.current === nextStyle) return
-    styleRef.current = nextStyle
-    clearMarkers(markersRef.current)
-    map.setStyle(nextStyle)
-  }, [dark])
+    if (!map || !showZoom) return undefined
+    const control = new NavigationControl({ showCompass: false })
+    map.addControl(control, 'bottom-right')
+    return () => {
+      // On unmount the map may already be destroyed by the effect above; removing then throws.
+      if (mapRef.current === map) map.removeControl(control)
+    }
+  }, [showZoom])
 
+  const styleRef = useRef(dark)
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
+    if (!map || styleRef.current === dark) return
+    styleRef.current = dark
+    map.setStyle(dark ? STYLES.dark : STYLES.light)
+  }, [dark])
+
+  // Frame the search area once the floating UI is measured, centred in the uncovered part.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !insetsReady) return
     const center = origin ?? SPAIN
-    const zoom = origin ? zoomForRadius(radiusKm) : 6
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const zoom = origin ? radiusZoom(radiusKm) : 5
+    const key = `${center.latitude.toFixed(4)}:${center.longitude.toFixed(4)}:${zoom}`
+    if (lastFlyRef.current === key) return
+    const first = lastFlyRef.current === ''
+    lastFlyRef.current = key
+    const shift = (live.current.insets.bottom - live.current.insets.top) / 2
+    if (first || prefersReducedMotion()) {
+      // Opening the app: no animation to watch, so place the camera directly.
+      map.jumpTo({ center: [center.longitude, center.latitude], zoom })
+      map.panBy([0, shift], { duration: 0 })
+      return
+    }
     map.flyTo({
       center: [center.longitude, center.latitude],
       zoom,
-      duration: reduceMotion ? 0 : 550,
+      offset: visibleOffset(live.current.insets),
+      duration: prefersReducedMotion() ? 0 : 500,
       essential: true,
     })
-    if (map.isStyleLoaded()) placeOriginMarker(map, originMarkerRef, origin)
-  }, [origin, radiusKm])
+  }, [origin, radiusKm, insetsReady])
 
+  // Origin dot and search radius.
   useEffect(() => {
     const map = mapRef.current
-    if (!map?.isStyleLoaded()) return
-    const source = map.getSource(SOURCE_ID)
-    if (!isGeoJsonSource(source)) {
-      mountStationSource(map, stations)
-      return
+    if (!map) return
+    if (!origin) {
+      originMarkerRef.current?.remove()
+      originMarkerRef.current = null
+    } else if (originMarkerRef.current) {
+      originMarkerRef.current.setLngLat([origin.longitude, origin.latitude])
+    } else {
+      const element = document.createElement('span')
+      element.className = 'origin-dot'
+      element.setAttribute('aria-hidden', 'true')
+      originMarkerRef.current = new Marker({ element }).setLngLat([origin.longitude, origin.latitude]).addTo(map)
     }
-    source.setData(toCollection(stations))
-    syncStationMarkers(map, markersRef.current, snapshotRef)
-  }, [stations, selectedId])
+    const source = map.getSource(RADIUS)
+    if (isGeoJson(source)) source.setData(radiusData(origin, radiusKm))
+  }, [origin, radiusKm])
+
+  // Station data: pushed only when something drawn changed (the list is re-ranked every minute).
+  useEffect(() => {
+    live.current.byId = new Map(stations.map((item) => [item.station.id, item]))
+    const signature = stations
+      .map((item) => `${item.station.id}:${item.price}:${item.band}:${item.isBest}:${item.openStatus}`)
+      .join('|')
+    if (signature === signatureRef.current) return
+    const map = mapRef.current
+    if (!map || !setStationData(map, stations)) return
+    signatureRef.current = signature
+  }, [stations])
+
+  // Selection: repaint the affected pins and bring the selected one into the uncovered area.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    syncMarkers(map, markersRef.current, live.current)
+    revealSelected(map, markersRef.current, live.current)
+  }, [selectedId])
+
+  // The sheet may rise after a selection (collapsed → half): keep the selected pin uncovered.
+  useEffect(() => {
+    const map = mapRef.current
+    if (map) revealSelected(map, markersRef.current, live.current)
+  }, [insets.top, insets.bottom])
 
   return <div ref={containerRef} className="h-full w-full" role="region" aria-label="Mapa de gasolineras" />
 }
 
-function mountStationSource(map: MapLibreMap, stations: readonly RankedStation[]) {
-  if (map.getSource(SOURCE_ID)) return
-  map.addSource(SOURCE_ID, {
-    type: 'geojson',
-    data: toCollection(stations),
-    cluster: true,
-    clusterRadius: 48,
-    clusterMaxZoom: 16,
-  })
-  map.addLayer({
-    id: ANCHOR_LAYER_ID,
-    type: 'circle',
-    source: SOURCE_ID,
-    paint: {
-      'circle-radius': 1,
-      'circle-opacity': 0,
-    },
-  })
+function addLayers(map: MapLibreMap, current: Live) {
+  if (!map.getSource(RADIUS)) {
+    map.addSource(RADIUS, { type: 'geojson', data: radiusData(current.origin, current.radiusKm) })
+    const color = current.dark ? '#4cc7ad' : '#0b6b5a'
+    map.addLayer({ id: `${RADIUS}-fill`, type: 'fill', source: RADIUS, paint: { 'fill-color': color, 'fill-opacity': 0.04 } })
+    map.addLayer({
+      id: `${RADIUS}-line`,
+      type: 'line',
+      source: RADIUS,
+      paint: { 'line-color': color, 'line-opacity': 0.45, 'line-width': 1, 'line-dasharray': [3, 4] },
+    })
+  }
+  if (!map.getSource(STATIONS)) {
+    map.addSource(STATIONS, {
+      type: 'geojson',
+      data: emptyCollection(),
+      cluster: true,
+      clusterRadius: 44,
+      clusterMaxZoom: CLUSTER_MAX_ZOOM,
+      // Each cluster carries its cheapest price, so a zoomed-out map still answers "where is it cheap".
+      clusterProperties: { minPrice: ['min', ['get', 'price']] },
+    })
+    // Invisible layer: querySourceFeatures only returns features of sources that are drawn.
+    map.addLayer({ id: `${STATIONS}-anchor`, type: 'circle', source: STATIONS, paint: { 'circle-radius': 1, 'circle-opacity': 0 } })
+  }
 }
 
-function toCollection(stations: readonly RankedStation[]): FeatureCollection<Point> {
-  return {
+/** Returns false while the style (and so the source) is not ready yet. */
+function setStationData(map: MapLibreMap, stations: readonly RankedStation[]): boolean {
+  const source = map.getSource(STATIONS)
+  if (!isGeoJson(source)) return false
+  source.setData({
     type: 'FeatureCollection',
     features: stations.map((item) => ({
       type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [item.station.longitude, item.station.latitude],
-      },
-      properties: {
-        id: item.station.id,
-        price: formatPrice(item.price),
-        band: item.band,
-        title: `${item.station.brand}, ${formatPrice(item.price)}, ${item.bandLabel}`,
-      },
+      geometry: { type: 'Point', coordinates: [item.station.longitude, item.station.latitude] },
+      properties: { id: item.station.id, price: item.price },
     })),
-  }
+  })
+  return true
 }
 
-function syncStationMarkers(
-  map: MapLibreMap,
-  markers: globalThis.Map<string, Marker>,
-  snapshotRef: { readonly current: MapSnapshot },
-) {
-  if (!map.getSource(SOURCE_ID) || !map.isSourceLoaded(SOURCE_ID)) return
+/** Keeps one HTML marker per visible station or cluster, reusing elements between frames. */
+function syncMarkers(map: MapLibreMap, markers: Map<string, MarkerEntry>, current: Live) {
+  if (!map.getSource(STATIONS) || !map.isSourceLoaded(STATIONS)) return
   const seen = new Set<string>()
-  for (const feature of map.querySourceFeatures(SOURCE_ID)) {
-    const geometry = feature.geometry
-    if (geometry.type !== 'Point') continue
-    const [longitude, latitude] = geometry.coordinates
+  for (const feature of map.querySourceFeatures(STATIONS)) {
+    if (feature.geometry.type !== 'Point') continue
+    const [longitude, latitude] = feature.geometry.coordinates
     if (longitude === undefined || latitude === undefined) continue
-    const fields = markerFields(feature.properties)
-    const clustered = isCluster(fields.cluster)
-    const identity = asNumber(clustered ? fields.clusterId : fields.id)
-    if (identity === null) continue
-    const key = clustered ? `c-${identity}` : `s-${identity}`
+    const props: Record<string, unknown> = feature.properties ?? {}
+    const clusterId = numberOf(props.cluster_id)
+    const isCluster = props.cluster === true && clusterId !== null
+
+    let key: string
+    let html: string
+    let label: string
+    let zIndex = '1'
+    if (isCluster) {
+      const minPrice = numberOf(props.minPrice)
+      const count = numberOf(props.point_count) ?? 0
+      const cheapest = minPrice === null ? null : formatPrice(minPrice)
+      key = `c-${clusterId}`
+      html = clusterHtml(cheapest, count)
+      label = clusterLabel(cheapest, count)
+    } else {
+      const id = numberOf(props.id)
+      const item = id === null ? undefined : current.byId.get(id)
+      if (id === null || !item) continue
+      const selected = id === current.selectedId
+      key = `s-${id}`
+      html = markerHtml(item, selected)
+      label = markerLabel(item)
+      zIndex = selected ? '3' : item.isBest ? '2' : '1'
+    }
     if (seen.has(key)) continue
     seen.add(key)
 
-    const existing = markers.get(key)
-    const element = buttonElement(existing)
-    if (!element) continue
-    if (!existing) {
-      element.type = 'button'
-      element.addEventListener('click', (event) => {
-        event.stopPropagation()
-        if (element.dataset.kind === 'cluster') {
-          expandCluster(map, element)
-          return
-        }
-        const stationId = Number(element.dataset.id)
-        if (Number.isFinite(stationId)) snapshotRef.current.onSelect(stationId)
-      })
-    }
-
-    element.dataset.lng = String(longitude)
-    element.dataset.lat = String(latitude)
-    if (clustered) {
-      const count = asNumber(fields.pointCount) ?? 0
-      element.dataset.kind = 'cluster'
-      element.dataset.clusterId = String(identity)
-      element.className = 'reposta-cluster'
-      element.textContent = asText(fields.pointCountLabel) || String(count)
-      element.setAttribute('aria-label', `${count} gasolineras`)
-    } else {
-      element.dataset.kind = 'station'
-      element.dataset.id = String(identity)
-      paintPriceMarker(element, fields, snapshotRef.current.selectedId)
-    }
-
-    if (existing) {
-      existing.setLngLat([longitude, latitude])
+    const entry = markers.get(key)
+    if (entry) {
+      entry.marker.setLngLat([longitude, latitude])
+      const element = entry.marker.getElement()
+      if (entry.html !== html) {
+        element.innerHTML = html
+        entry.html = html
+      }
+      element.setAttribute('aria-label', label)
+      element.style.zIndex = zIndex
       continue
     }
-    const marker = new Marker({
-      element,
-      anchor: clustered ? 'center' : 'bottom',
-    })
-      .setLngLat([longitude, latitude])
-      .addTo(map)
-    markers.set(key, marker)
-  }
 
-  for (const [key, marker] of markers) {
+    const element = document.createElement('button')
+    element.type = 'button'
+    element.className = isCluster ? 'reposta-cluster' : 'price-marker'
+    element.innerHTML = html
+    element.setAttribute('aria-label', label)
+    element.style.zIndex = zIndex
+    element.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (isCluster && clusterId !== null) expandCluster(map, clusterId, [longitude, latitude])
+      else current.onSelect(Number(key.slice(2)))
+    })
+    const marker = new Marker({ element, anchor: isCluster ? 'center' : 'bottom' }).setLngLat([longitude, latitude]).addTo(map)
+    markers.set(key, { marker, html })
+  }
+  for (const [key, entry] of markers) {
     if (seen.has(key)) continue
-    marker.remove()
+    entry.marker.remove()
     markers.delete(key)
   }
 }
 
-function buttonElement(existing: Marker | undefined): HTMLButtonElement | null {
-  if (!existing) return document.createElement('button')
-  const element = existing.getElement()
-  return element instanceof HTMLButtonElement ? element : null
-}
-
-function expandCluster(map: MapLibreMap, element: HTMLButtonElement) {
-  const source = map.getSource(SOURCE_ID)
-  const clusterId = Number(element.dataset.clusterId)
-  const longitude = Number(element.dataset.lng)
-  const latitude = Number(element.dataset.lat)
-  if (!isGeoJsonSource(source) || !Number.isFinite(clusterId) || !Number.isFinite(longitude) || !Number.isFinite(latitude)) {
-    return
-  }
+function expandCluster(map: MapLibreMap, clusterId: number, center: [number, number]) {
+  const source = map.getSource(STATIONS)
+  if (!isGeoJson(source)) return
   void source.getClusterExpansionZoom(clusterId).then((zoom) => {
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    map.easeTo({
-      center: [longitude, latitude],
-      zoom,
-      duration: reduceMotion ? 0 : 400,
-    })
+    map.easeTo({ center, zoom, duration: prefersReducedMotion() ? 0 : 350 })
   })
 }
 
-function paintPriceMarker(element: HTMLButtonElement, fields: MarkerFields, selectedId: number | null) {
-  const id = asNumber(fields.id)
-  const band = asText(fields.band) || 'unknown'
-  const selected = id !== null && id === selectedId
-  element.className = 'price-marker'
-  element.dataset.band = band
-  element.dataset.selected = selected ? 'true' : 'false'
-  element.textContent = asText(fields.price)
-  element.setAttribute('aria-label', asText(fields.title) || 'Gasolinera')
-  element.style.zIndex = selected ? '4' : '1'
-}
-
-function placeOriginMarker(
-  map: MapLibreMap,
-  markerRef: { current: Marker | null },
-  origin: Place | null,
-) {
-  if (!origin) {
-    markerRef.current?.remove()
-    markerRef.current = null
-    return
+/**
+ * Moves the map only when the selected station is off-screen, under the
+ * floating UI or hidden inside a cluster; otherwise the map stays still.
+ */
+function revealSelected(map: MapLibreMap, markers: Map<string, MarkerEntry>, current: Live) {
+  const id = current.selectedId
+  const item = id === null ? undefined : current.byId.get(id)
+  if (id === null || !item) return
+  const lngLat: [number, number] = [item.station.longitude, item.station.latitude]
+  const point = map.project(lngLat)
+  const { clientWidth: width, clientHeight: height } = map.getContainer()
+  const { top, bottom } = current.insets
+  const inside = point.x >= 48 && point.x <= width - 48 && point.y >= top + 72 && point.y <= height - bottom - 48
+  const drawn = markers.has(`s-${id}`)
+  if (inside && drawn) return
+  // Inside but not drawn means it sits in a cluster: zoom just past clustering.
+  const zoom = inside && !drawn ? Math.max(map.getZoom(), CLUSTER_MAX_ZOOM + 1) : map.getZoom()
+  map.easeTo({ center: lngLat, zoom, offset: visibleOffset(current.insets), duration: prefersReducedMotion() ? 0 : 300 })
+  if (!inside) {
+    // Once centred, a station still hidden in a cluster needs the extra zoom.
+    map.once('moveend', () => {
+      if (current.selectedId === id && !markers.has(`s-${id}`) && map.getZoom() <= CLUSTER_MAX_ZOOM) {
+        map.easeTo({ center: lngLat, zoom: CLUSTER_MAX_ZOOM + 1, offset: visibleOffset(current.insets), duration: prefersReducedMotion() ? 0 : 300 })
+      }
+    })
   }
-  const marker = markerRef.current
-  if (!marker) {
-    const element = document.createElement('div')
-    element.className = 'origin-dot'
-    element.setAttribute('aria-hidden', 'true')
-    markerRef.current = new Marker({ element }).setLngLat([origin.longitude, origin.latitude]).addTo(map)
-    return
+}
+
+function visibleCenter(map: MapLibreMap, insets: MapInsets) {
+  const { clientWidth: width, clientHeight: height } = map.getContainer()
+  return map.unproject([width / 2, insets.top + (height - insets.top - insets.bottom) / 2])
+}
+
+/** Shifts a camera target from the container centre to the middle of the uncovered area. */
+function visibleOffset(insets: MapInsets): [number, number] {
+  return [0, (insets.top - insets.bottom) / 2]
+}
+
+/** MapLibre zooms are defined for 512 px tiles: one level less than the 256 px scale of `zoomForRadius`. */
+function radiusZoom(radiusKm: number): number {
+  return zoomForRadius(radiusKm) - 1
+}
+
+function radiusData(origin: Place | null, radiusKm: number): FeatureCollection<Polygon> {
+  if (!origin) return { type: 'FeatureCollection', features: [] }
+  const steps = 72
+  const latRadius = radiusKm / 110.574
+  const lngRadius = radiusKm / (111.32 * Math.cos((origin.latitude * Math.PI) / 180))
+  const ring: [number, number][] = []
+  for (let index = 0; index <= steps; index += 1) {
+    const angle = (index / steps) * Math.PI * 2
+    ring.push([origin.longitude + lngRadius * Math.cos(angle), origin.latitude + latRadius * Math.sin(angle)])
   }
-  marker.setLngLat([origin.longitude, origin.latitude])
+  const circle: Feature<Polygon> = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} }
+  return { type: 'FeatureCollection', features: [circle] }
 }
 
-function clearMarkers(markers: globalThis.Map<string, Marker>) {
-  for (const marker of markers.values()) marker.remove()
-  markers.clear()
+function emptyCollection(): FeatureCollection<Point> {
+  return { type: 'FeatureCollection', features: [] }
 }
 
-function isGeoJsonSource(source: unknown): source is GeoJSONSource {
+function isGeoJson(source: unknown): source is GeoJSONSource {
   return typeof source === 'object' && source !== null && 'setData' in source && 'getClusterExpansionZoom' in source
 }
 
-function markerFields(properties: object | null): MarkerFields {
-  return {
-    cluster: field(properties, 'cluster'),
-    clusterId: field(properties, 'cluster_id'),
-    pointCount: field(properties, 'point_count'),
-    pointCountLabel: field(properties, 'point_count_abbreviated'),
-    id: field(properties, 'id'),
-    price: field(properties, 'price'),
-    band: field(properties, 'band'),
-    title: field(properties, 'title'),
-  }
-}
-
-function field(source: object | null, key: string): unknown {
-  if (!source || !Object.prototype.hasOwnProperty.call(source, key)) return undefined
-  const record = source as Record<string, unknown>
-  return record[key]
-}
-
-function isCluster(value: unknown): boolean {
-  return value === true || value === 1
-}
-
-function asNumber(value: unknown): number | null {
+function numberOf(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value)
   return null
 }
 
-function asText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  return ''
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }

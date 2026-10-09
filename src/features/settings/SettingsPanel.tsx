@@ -1,11 +1,13 @@
+import { ChevronLeft, Monitor, Moon, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { Button } from '../../components/ui/Button'
 import { usePreferences } from '../../stores/preferences'
 import type { ThemePreference } from '../../types/domain'
-import { Button } from '../../components/ui/Button'
 
-const THEMES: { id: ThemePreference; label: string }[] = [
-  { id: 'light', label: 'Claro' },
-  { id: 'dark', label: 'Oscuro' },
-  { id: 'system', label: 'Sistema' },
+const THEMES: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { id: 'light', label: 'Claro', icon: Sun },
+  { id: 'dark', label: 'Oscuro', icon: Moon },
+  { id: 'system', label: 'Sistema', icon: Monitor },
 ]
 
 interface SettingsPanelProps {
@@ -19,70 +21,120 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const roundTrip = usePreferences((state) => state.roundTrip)
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Ajustes</h2>
-        <Button variant="ghost" onClick={onClose}>
-          Cerrar
+    <section className="animate-fade-up space-y-6" aria-labelledby="settings-title">
+      <header className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" className="-ml-2" aria-label="Volver al listado" onClick={onClose}>
+          <ChevronLeft aria-hidden className="size-5" />
         </Button>
-      </div>
-      <fieldset className="space-y-2">
-        <legend className="text-sm font-semibold">Apariencia</legend>
-        <div role="radiogroup" aria-label="Tema" className="flex gap-2">
-          {THEMES.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={theme === option.id}
-              className={`min-h-11 flex-1 rounded-full text-sm font-semibold ${theme === option.id ? 'bg-ink text-bg' : 'border border-line'}`}
-              onClick={() => usePreferences.getState().setTheme(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
+        <h2 id="settings-title" className="text-heading font-semibold tracking-tight">
+          Ajustes
+        </h2>
+      </header>
+
+      <fieldset>
+        <legend className="text-body-sm font-semibold">Apariencia</legend>
+        <div role="radiogroup" aria-label="Tema" className="mt-2 grid grid-cols-3 gap-1 rounded-full bg-raised p-1">
+          {THEMES.map((option) => {
+            const Icon = option.icon
+            const checked = theme === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-full text-body-sm font-semibold transition-colors duration-150 ${
+                  checked ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'
+                }`}
+                onClick={() => usePreferences.getState().setTheme(option.id)}
+              >
+                <Icon aria-hidden className="size-4" />
+                {option.label}
+              </button>
+            )
+          })}
         </div>
       </fieldset>
-      <label className="grid gap-1 text-sm font-semibold">
-        ¿Cuánto vas a repostar?
-        <input
-          type="number"
+
+      <fieldset className="space-y-4">
+        <legend className="text-body-sm font-semibold">Cálculo del ahorro</legend>
+        <NumberField
+          label="Litros por repostaje"
+          unit="L"
           min={5}
           max={150}
-          inputMode="numeric"
-          className="min-h-11 rounded-xl border border-line bg-bg px-3 font-normal"
+          step={1}
           value={liters}
-          onChange={(event) => usePreferences.getState().setLiters(Number(event.target.value))}
+          onChange={(value) => usePreferences.getState().setLiters(value)}
         />
-        <span className="font-normal text-muted">Litros. Sirve solo para estimar el ahorro.</span>
-      </label>
-      <label className="grid gap-1 text-sm font-semibold">
-        Consumo del vehículo
-        <input
-          type="number"
+        <NumberField
+          label="Consumo del vehículo"
+          unit="L/100 km"
           min={2}
           max={20}
           step={0.1}
-          inputMode="decimal"
-          className="min-h-11 rounded-xl border border-line bg-bg px-3 font-normal"
           value={consumption}
-          onChange={(event) => usePreferences.getState().setConsumption(Number(event.target.value))}
+          onChange={(value) => usePreferences.getState().setConsumption(value)}
         />
-        <span className="font-normal text-muted">Litros a los 100 km. Valor de partida: 6,5.</span>
-      </label>
-      <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold">
-        Contar ida y vuelta
-        <input
-          type="checkbox"
-          className="size-5 accent-current"
-          checked={roundTrip}
-          onChange={(event) => usePreferences.getState().setRoundTrip(event.target.checked)}
-        />
-      </label>
-      <p className="text-xs leading-relaxed text-muted">
-        El precio por litro sale de Precioil. El coste del desvío es una estimación local: kilómetros de más
-        respecto a la gasolinera más cercana, valorados a su precio. No incluye peajes ni tráfico.
+        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-body">
+          Contar ida y vuelta
+          <input
+            type="checkbox"
+            className="size-5 accent-[var(--accent)]"
+            checked={roundTrip}
+            onChange={(event) => usePreferences.getState().setRoundTrip(event.target.checked)}
+          />
+        </label>
+      </fieldset>
+
+      <p className="text-caption leading-relaxed text-muted">
+        Los precios son los oficiales publicados por las gasolineras (vía Precioil). El coste del desvío es una
+        estimación: kilómetros de más frente a la gasolinera más cercana, sin peajes ni tráfico.
       </p>
-    </div>
+    </section>
+  )
+}
+
+function NumberField({
+  label,
+  unit,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+}: {
+  label: string
+  unit: string
+  min: number
+  max: number
+  step: number
+  value: number
+  onChange: (value: number) => void
+}) {
+  // Draft text so intermediate values ("4" on the way to "40") are not clamped mid-typing.
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <label className="flex items-center justify-between gap-3 text-body">
+      {label}
+      <span className="flex h-11 w-36 items-center rounded-sm border border-line-strong bg-surface px-3 focus-within:border-accent">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          inputMode="decimal"
+          className="tabular min-w-0 flex-1 bg-transparent text-right outline-none"
+          value={draft ?? String(value)}
+          onChange={(event) => {
+            setDraft(event.target.value)
+            const next = Number(event.target.value.replace(',', '.'))
+            if (event.target.value !== '' && next >= min && next <= max) onChange(next)
+          }}
+          onBlur={() => setDraft(null)}
+        />
+        <span className="ml-1.5 text-body-sm text-muted">{unit}</span>
+      </span>
+    </label>
   )
 }

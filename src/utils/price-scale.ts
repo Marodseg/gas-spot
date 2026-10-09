@@ -18,9 +18,9 @@ export function priceScale(prices: readonly number[]): (price: number) => PriceR
   const lowCut = quantile(sorted, 0.33)
   const highCut = quantile(sorted, 0.66)
   return (price: number) => {
-    if (price <= lowCut) return { band: 'cheap', label: 'De los más baratos' }
-    if (price >= highCut) return { band: 'high', label: 'De los más caros' }
-    return { band: 'mid', label: 'En la zona media' }
+    if (price <= lowCut) return { band: 'cheap', label: 'Barato en la zona' }
+    if (price >= highCut) return { band: 'high', label: 'Caro en la zona' }
+    return { band: 'mid', label: 'Precio medio' }
   }
 }
 

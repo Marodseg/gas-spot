@@ -1,5 +1,3 @@
-const relativeFormat = new Intl.RelativeTimeFormat('es', { numeric: 'auto' })
-
 export function parseApiTimestamp(value: string): Date | null {
   const trimmed = value.trim()
   if (!trimmed) return null
@@ -18,15 +16,30 @@ export function parseApiTimestamp(value: string): Date | null {
   return madridWallTimeToUtc(year, month, day, hour, minute, second)
 }
 
-export function formatRelativeTime(value: string, now = new Date()): string | null {
+export type Freshness = 'fresh' | 'recent' | 'stale'
+
+export interface UpdateInfo {
+  label: string
+  freshness: Freshness
+}
+
+const STALE_AFTER_HOURS = 24
+const RECENT_AFTER_HOURS = 3
+
+/** "Actualizado hace 14 min", "hace 3 h", "hace 2 días". Older prices read as less reliable. */
+export function describeUpdate(value: string | null, now = new Date()): UpdateInfo | null {
+  if (!value) return null
   const date = parseApiTimestamp(value)
   if (!date) return null
-  const diffSeconds = Math.round((date.getTime() - now.getTime()) / 1000)
-  const abs = Math.abs(diffSeconds)
-  if (abs < 60) return relativeFormat.format(Math.round(diffSeconds / 1), 'second')
-  if (abs < 3600) return relativeFormat.format(Math.round(diffSeconds / 60), 'minute')
-  if (abs < 86400) return relativeFormat.format(Math.round(diffSeconds / 3600), 'hour')
-  return relativeFormat.format(Math.round(diffSeconds / 86400), 'day')
+  const minutes = Math.max(0, Math.round((now.getTime() - date.getTime()) / 60_000))
+  // Rounded first so the label and the freshness never disagree ("hace 24 h" but still fresh).
+  const hours = Math.round(minutes / 60)
+  const freshness: Freshness = hours >= STALE_AFTER_HOURS ? 'stale' : hours >= RECENT_AFTER_HOURS ? 'recent' : 'fresh'
+  if (minutes < 1) return { label: 'Actualizado ahora', freshness }
+  if (minutes < 60) return { label: `Actualizado hace ${minutes} min`, freshness }
+  if (hours < 24) return { label: `Actualizado hace ${hours} h`, freshness }
+  const days = Math.max(1, Math.round(hours / 24))
+  return { label: `Actualizado hace ${days} ${days === 1 ? 'día' : 'días'}`, freshness }
 }
 
 export function formatDateTime(value: string): string | null {

@@ -1,7 +1,10 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { RankedStation } from '../../utils/ranking'
 import { StationCard } from './StationCard'
+
+const now = new Date('2026-10-08T12:00:00Z')
 
 const item: RankedStation = {
   station: {
@@ -20,13 +23,13 @@ const item: RankedStation = {
     saleType: 'public',
     margin: 'none',
     municipalityId: 1,
-    updatedAt: null,
+    updatedAt: '2026-10-08T11:46:00Z',
     prices: { Diesel: 1.469 },
     services: null,
   },
   price: 1.469,
   band: 'cheap',
-  bandLabel: 'De los más baratos',
+  bandLabel: 'Barato en la zona',
   cost: null,
   openStatus: 'open',
   isBest: true,
@@ -35,22 +38,23 @@ const item: RankedStation = {
 }
 
 describe('StationCard', () => {
-  it('hace visible el precio, la distancia y el estado sin depender solo del color', () => {
-    render(
-      <StationCard
-        item={item}
-        selected={false}
-        compared={false}
-        average={{ provinceId: 18, fuelName: 'Gasoleo A', price: 1.509, calculatedAt: null }}
-        provinceName="Granada"
-        onSelect={vi.fn()}
-        onCompare={vi.fn()}
-      />,
-    )
-    expect(screen.getByText('1,469 €')).toBeInTheDocument()
-    expect(screen.getByText(/De los más baratos/)).toBeInTheDocument()
+  it('prioriza precio, nombre y distancia y no depende solo del color', () => {
+    render(<StationCard item={item} selected={false} bestReason="La más barata y la más cercana" now={now} onSelect={vi.fn()} />)
+    expect(screen.getByText('1,469')).toBeInTheDocument()
+    expect(screen.getByText('€/L')).toBeInTheDocument()
+    expect(screen.getByText('Repsol')).toBeInTheDocument()
     expect(screen.getByText('1,2 km')).toBeInTheDocument()
-    expect(screen.getByText(/por debajo de la media de Granada/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Cómo llegar' })).toBeInTheDocument()
+    expect(screen.getByText('Barato en la zona')).toBeInTheDocument()
+    expect(screen.getByText('Recomendada')).toBeInTheDocument()
+    expect(screen.getByText('Actualizado hace 14 min')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cómo llegar a Repsol' })).toBeInTheDocument()
+  })
+
+  it('selecciona la gasolinera al pulsar la tarjeta', async () => {
+    const onSelect = vi.fn()
+    render(<StationCard item={item} selected bestReason={null} now={now} onSelect={onSelect} />)
+    expect(screen.getByRole('article')).toHaveAttribute('aria-current', 'true')
+    await userEvent.setup().click(screen.getByText('Repsol'))
+    expect(onSelect).toHaveBeenCalledWith(7)
   })
 })

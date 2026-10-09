@@ -1,286 +1,334 @@
-import { Crosshair, LocateFixed, Settings } from 'lucide-react'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { CircleAlert, Fuel, GitCompareArrows, LocateFixed, MapPin, MapPinOff, Search, SearchX, Settings, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, type RefObject } from 'react'
 import { Button } from '../../components/ui/Button'
+import { Price } from '../../components/ui/Price'
+import { StateMessage } from '../../components/ui/StateMessage'
 import { findFuel } from '../../config/fuels'
 import type { VisibleStations } from '../../hooks/useVisibleStations'
-import { locate } from '../../services/geolocation'
 import { usePreferences } from '../../stores/preferences'
 import { useSession } from '../../stores/session'
-import type { AppError, ProvinceAverage } from '../../types/domain'
-import { formatMoney } from '../../utils/format'
-import { choosePlace } from '../search/choose-place'
-import { PlaceSearch } from '../search/PlaceSearch'
-import { SettingsPanel } from '../settings/SettingsPanel'
+import { requestLocation } from '../search/choose-place'
 import { FilterBar } from '../stations/FilterBar'
-import { StationCard } from '../stations/StationCard'
+import { StationCard, StationCardSkeleton } from '../stations/StationCard'
 import { StationDetail } from '../stations/StationDetail'
+import { SettingsPanel } from '../settings/SettingsPanel'
+import { FuelPicker } from '../fuel-selector/FuelPicker'
+import { selectFuel } from '../fuel-selector/select-fuel'
 
-const HistoryPanel = lazy(() => import('../history/HistoryPanel').then((module) => ({ default: module.HistoryPanel })))
 const ComparePanel = lazy(() => import('../comparison/ComparePanel').then((module) => ({ default: module.ComparePanel })))
 
-interface SidePanelProps {
-  visible: VisibleStations
+const RADIUS_STEPS = [2, 5, 10, 20, 30]
+
+/** Fuel chips bound to the preferences store. */
+export function FuelSelector({ visible, floating = false }: { visible: VisibleStations; floating?: boolean }) {
+  const fuelId = usePreferences((state) => state.fuelId)
+  return (
+    <FuelPicker
+      selectedId={fuelId}
+      availableIds={visible.availableFuelIds}
+      floating={floating}
+      onSelect={(fuel) => selectFuel(fuel.id)}
+    />
+  )
 }
 
-export function SidePanel({ visible }: SidePanelProps) {
+export function SettingsButton({ floating = false }: { floating?: boolean }) {
+  return (
+    <Button
+      variant={floating ? 'secondary' : 'ghost'}
+      size="icon"
+      className={floating ? 'border-transparent shadow-md' : ''}
+      aria-label="Ajustes"
+      onClick={() => {
+        useSession.getState().setPanel('settings')
+        useSession.getState().setSheet('full')
+      }}
+    >
+      <Settings aria-hidden className="size-5" />
+    </Button>
+  )
+}
+
+/** "Gasóleo A · 18 gasolineras · desde 1,749 €/L" — what the list shows, at a glance. */
+export function ResultsSummary({ visible }: { visible: VisibleStations }) {
   const origin = useSession((state) => state.origin)
   const status = useSession((state) => state.status)
-  const error = useSession((state) => state.error)
+  const fuelId = usePreferences((state) => state.fuelId)
+  const radiusKm = usePreferences((state) => state.radiusKm)
+  const fuel = findFuel(fuelId)
+  const cheapest = visible.ranked.reduce<number | null>((min, item) => (min === null || item.price < min ? item.price : min), null)
+  const count = visible.ranked.length
+
+  // Without a place or with a failed load the body already explains the state.
+  if (!origin || status === 'error') return null
+  return (
+    <div className="flex items-end justify-between gap-3" aria-live="polite">
+      <div className="min-w-0">
+        <p className="truncate text-caption font-semibold tracking-wide text-muted uppercase">
+          {fuel.label} · {radiusKm} km
+        </p>
+        <p className="text-title font-semibold">
+          {status === 'loading' && count === 0
+            ? 'Buscando gasolineras…'
+            : `${count} ${count === 1 ? 'gasolinera' : 'gasolineras'}`}
+        </p>
+      </div>
+      {cheapest !== null ? (
+        <p className="shrink-0 text-right text-body-sm text-muted">
+          desde <Price value={cheapest} size="md" className="text-cheap" />
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+interface PanelContentProps {
+  visible: VisibleStations
+  scrollRef: RefObject<HTMLDivElement | null>
+}
+
+/** Body of the results panel: list, detail, comparison or settings. */
+export function PanelContent({ visible, scrollRef }: PanelContentProps) {
   const panel = useSession((state) => state.panel)
   const selectedId = useSession((state) => state.selectedId)
   const compareIds = useSession((state) => state.compareIds)
+  const stations = useSession((state) => state.stations)
   const provinceAverage = useSession((state) => state.provinceAverage)
   const provinceName = useSession((state) => state.provinceName)
-  const stations = useSession((state) => state.stations)
+  const fuelId = usePreferences((state) => state.fuelId)
+  const selected = stations.find((station) => station.id === selectedId) ?? null
+
+  // Detail and other panels open at the top; going back to the list brings the active card into view.
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    if (panel !== 'browse') {
+      scroller.scrollTop = 0
+      return
+    }
+    if (selectedId === null) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+    document.getElementById(`station-${selectedId}`)?.scrollIntoView?.({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [panel, selectedId, scrollRef])
+
+  const back = useCallback(() => useSession.getState().setPanel('browse'), [])
+
+  // Escape closes detail, comparison and settings, unless it is closing a field's own popup.
+  useEffect(() => {
+    if (panel === 'browse') return undefined
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.target instanceof HTMLElement && event.target.closest('input, select, textarea')) return
+      back()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [panel, back])
+
+  if (panel === 'settings') return <SettingsPanel onClose={back} />
+  if (panel === 'detail' && selected) {
+    return (
+      <StationDetail
+        key={selected.id}
+        station={selected}
+        item={visible.ranked.find((item) => item.station.id === selected.id) ?? null}
+        fuelId={fuelId}
+        liters={visible.assumptions.liters}
+        average={provinceAverage}
+        provinceName={provinceName}
+        now={visible.now}
+        compared={compareIds.includes(selected.id)}
+        onBack={back}
+        onCompare={() => useSession.getState().toggleCompare(selected.id)}
+      />
+    )
+  }
+  if (panel === 'compare') {
+    return (
+      <Suspense fallback={<ListSkeleton count={2} />}>
+        <ComparePanel
+          items={visible.ranked.filter((item) => compareIds.includes(item.station.id))}
+          liters={visible.assumptions.liters}
+          onClose={back}
+          onOpen={(id) => useSession.getState().selectStation(id)}
+          onRemove={(id) => useSession.getState().toggleCompare(id)}
+        />
+      </Suspense>
+    )
+  }
+  return <Browse visible={visible} />
+}
+
+function Browse({ visible }: { visible: VisibleStations }) {
+  const origin = useSession((state) => state.origin)
+  const status = useSession((state) => state.status)
+  const error = useSession((state) => state.error)
+  const selectedId = useSession((state) => state.selectedId)
+  const compareIds = useSession((state) => state.compareIds)
+  const stationCount = useSession((state) => state.stations.length)
+  const locating = useSession((state) => state.locating)
+  const locateError = useSession((state) => state.locateError)
   const fuelId = usePreferences((state) => state.fuelId)
   const radiusKm = usePreferences((state) => state.radiusKm)
-  const selected = stations.find((station) => station.id === selectedId) ?? null
-  const [locateMessage, setLocateMessage] = useState<string | null>(null)
-  const [locating, setLocating] = useState(false)
+  const fuel = findFuel(fuelId)
+  const select = useCallback((id: number) => useSession.getState().selectStation(id), [])
+  const loading = status === 'loading'
 
-  useEffect(() => {
-    if (selectedId === null || panel !== 'browse') return
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-    document.getElementById(`station-${selectedId}`)?.scrollIntoView({
-      block: 'nearest',
-      behavior: reduce ? 'auto' : 'smooth',
-    })
-  }, [selectedId, panel])
-
-  async function requestLocation() {
-    setLocating(true)
-    setLocateMessage(null)
-    try {
-      choosePlace(await locate())
-    } catch (caught) {
-      const appError = isAppError(caught) ? caught : null
-      setLocateMessage(appError?.message ?? 'No hemos podido obtener tu ubicación. Puedes buscar una ciudad manualmente.')
-    } finally {
-      setLocating(false)
-    }
+  if (!origin) {
+    return locateError ? (
+      <StateMessage icon={MapPinOff} title={locateError.title} description={locateError.message}>
+        <Button onClick={focusSearch}>
+          <Search aria-hidden className="size-4" />
+          Buscar un lugar
+        </Button>
+        <Button variant="secondary" loading={locating} onClick={() => void requestLocation()}>
+          Reintentar
+        </Button>
+      </StateMessage>
+    ) : (
+      <StateMessage
+        icon={MapPin}
+        title="Encuentra dónde repostar"
+        description="Te enseñamos las gasolineras cercanas, su precio y cuál compensa más."
+      >
+        <Button loading={locating} onClick={() => void requestLocation()}>
+          {locating ? null : <LocateFixed aria-hidden className="size-4" />}
+          {locating ? 'Buscando tu ubicación…' : 'Usar mi ubicación'}
+        </Button>
+        <Button variant="secondary" onClick={focusSearch}>
+          Buscar un lugar
+        </Button>
+      </StateMessage>
+    )
   }
 
-  return (
-    <section className="flex min-h-0 flex-col bg-bg" aria-label="Resultados">
-      <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.16em] text-accent uppercase">Reposta</p>
-          <h1 className="text-lg font-semibold tracking-tight">Dónde repostar</h1>
-        </div>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" aria-label="Usar mi ubicación" disabled={locating} onClick={() => void requestLocation()}>
-            <LocateFixed aria-hidden className="size-5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Ajustes"
-            onClick={() => useSession.getState().setPanel('settings')}
-          >
-            <Settings aria-hidden className="size-5" />
-          </Button>
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-6">
-        {panel === 'settings' ? <SettingsPanel onClose={() => useSession.getState().setPanel('browse')} /> : null}
-        {panel === 'detail' && selected ? (
-          <StationDetail
-            station={selected}
-            fuelId={fuelId}
-            cost={visible.ranked.find((item) => item.station.id === selected.id)?.cost ?? null}
-            compared={compareIds.includes(selected.id)}
-            onBack={() => useSession.getState().setPanel('browse')}
-            onHistory={() => useSession.getState().setPanel('history')}
-            onCompare={() => useSession.getState().toggleCompare(selected.id)}
-          />
-        ) : null}
-        {panel === 'history' && selected ? (
-          <Suspense fallback={<div className="h-40 animate-pulse rounded-3xl bg-line/70" />}>
-            <HistoryPanel station={selected} fuelId={fuelId} onBack={() => useSession.getState().setPanel('detail')} />
-          </Suspense>
-        ) : null}
-        {panel === 'compare' ? (
-          <Suspense fallback={<div className="h-40 animate-pulse rounded-3xl bg-line/70" />}>
-            <ComparePanel
-              items={visible.ranked.filter((item) => compareIds.includes(item.station.id))}
-              liters={visible.assumptions.liters}
-              onClose={() => useSession.getState().setPanel('browse')}
-              onOpen={(id) => useSession.getState().selectStation(id)}
-            />
-          </Suspense>
-        ) : null}
-        {panel === 'browse' ? (
-          <Browse
-            originLabel={origin?.label ?? null}
-            status={status}
-            error={error}
-            locateMessage={locateMessage}
-            locating={locating}
-            stationCount={stations.length}
-            fuelLabel={findFuel(fuelId).label}
-            radiusKm={radiusKm}
-            visible={visible}
-            selectedId={selectedId}
-            compareIds={compareIds}
-            provinceAverage={provinceAverage}
-            provinceName={provinceName}
-            onLocate={() => void requestLocation()}
-          />
-        ) : null}
-      </div>
-    </section>
-  )
-}
+  const nextRadius = RADIUS_STEPS.find((radius) => radius > radiusKm)
+  const otherFuel = [...visible.availableFuelIds].find((id) => id !== fuelId)
 
-function Browse({
-  originLabel,
-  status,
-  error,
-  locateMessage,
-  locating,
-  stationCount,
-  fuelLabel,
-  radiusKm,
-  visible,
-  selectedId,
-  compareIds,
-  provinceAverage,
-  provinceName,
-  onLocate,
-}: {
-  originLabel: string | null
-  status: 'idle' | 'loading' | 'ready' | 'error'
-  error: AppError | null
-  locateMessage: string | null
-  locating: boolean
-  stationCount: number
-  fuelLabel: string
-  radiusKm: number
-  visible: VisibleStations
-  selectedId: number | null
-  compareIds: number[]
-  provinceAverage: ProvinceAverage | null
-  provinceName: string | null
-  onLocate: () => void
-}) {
-  const best = visible.ranked.find((item) => item.isBest) ?? visible.ranked[0]
   return (
-    <div className="space-y-3" id="resultados">
-      {originLabel ? (
-        <p className="text-sm text-muted">Cerca de {originLabel}</p>
-      ) : (
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight">Encuentra dónde repostar mejor</h2>
-          <p className="text-sm text-muted">
-            Elige el combustible, mira precio y distancia, y quédate con la que de verdad compensa.
+    <div id="resultados" className="space-y-3">
+      {locateError ? (
+        <div role="alert" className="flex items-start gap-3 rounded-md bg-raised p-3 text-body-sm">
+          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-muted" />
+          <p className="flex-1">
+            <span className="font-semibold">{locateError.title}.</span> <span className="text-muted">{locateError.message}</span>
           </p>
+          <button
+            type="button"
+            aria-label="Cerrar aviso"
+            className="-m-1 grid size-8 place-items-center rounded-full text-muted hover:bg-ink/6"
+            onClick={() => useSession.getState().setLocating(false)}
+          >
+            <X aria-hidden className="size-4" />
+          </button>
         </div>
-      )}
-      <PlaceSearch />
-      <Button className="w-full" disabled={locating} onClick={onLocate}>
-        <Crosshair aria-hidden className="size-4" />
-        {locating ? 'Buscando tu ubicación…' : 'Usar mi ubicación'}
-      </Button>
-      {locateMessage ? <p className="text-sm text-muted">{locateMessage}</p> : null}
-      <FilterBar brands={visible.brands} />
-      {visible.recommendation ? (
-        <section className="rounded-3xl border border-line bg-surface p-4" aria-label="Recomendación">
-          <p className="text-xs font-semibold tracking-wide text-accent uppercase">{visible.recommendation.title}</p>
-          <p className="mt-1 text-sm leading-relaxed">{visible.recommendation.body}</p>
-          {visible.recommendation.estimate ? (
-            <p className="mt-2 text-xs text-muted">Estimación con {visible.assumptions.liters} L. No es un precio oficial.</p>
-          ) : null}
-          {best?.cost?.netCostEur !== null && best?.cost?.netCostEur !== undefined ? (
-            <p className="mt-2 text-sm font-semibold tabular-nums">Coste estimado {formatMoney(best.cost.netCostEur)}</p>
-          ) : null}
-        </section>
       ) : null}
+
       {compareIds.length > 0 ? (
-        <Button variant="secondary" className="w-full" onClick={() => useSession.getState().setPanel('compare')}>
-          Ver comparación ({compareIds.length})
+        <Button variant="secondary" size="sm" className="w-full" onClick={() => useSession.getState().setPanel('compare')}>
+          <GitCompareArrows aria-hidden className="size-4" />
+          Comparar {compareIds.length} {compareIds.length === 1 ? 'gasolinera' : 'gasolineras'}
         </Button>
       ) : null}
-      {status === 'loading' && visible.ranked.length === 0 ? <StationSkeletons /> : null}
+
       {status === 'error' && error ? (
-        <div className="rounded-3xl border border-line bg-surface p-4">
-          <p className="text-sm">{error.message}</p>
-          <Button className="mt-3" variant="secondary" onClick={() => useSession.getState().retry()}>
+        <StateMessage icon={CircleAlert} tone="error" title={error.title} description={error.message} detail={error.detail}>
+          <Button variant="secondary" onClick={() => useSession.getState().retry()}>
             Reintentar
           </Button>
-        </div>
+        </StateMessage>
       ) : null}
-      {status !== 'loading' && originLabel && stationCount === 0 && status !== 'error' ? (
-        <EmptyState
-          title="No hemos encontrado gasolineras en esta zona."
-          action={radiusKm < 30 ? `Ampliar a ${nextRadius(radiusKm)} km` : undefined}
-          onAction={() => usePreferences.getState().setRadiusKm(nextRadius(radiusKm))}
-        />
+
+      {loading && visible.ranked.length === 0 ? <ListSkeleton count={5} /> : null}
+
+      {!loading && status !== 'error' && stationCount === 0 ? (
+        <StateMessage
+          icon={MapPinOff}
+          title={`Sin gasolineras a ${radiusKm} km`}
+          description={nextRadius ? 'Amplía la distancia o busca otra zona.' : 'Prueba a buscar otra zona.'}
+        >
+          {nextRadius ? (
+            <Button variant="secondary" onClick={() => usePreferences.getState().setRadiusKm(nextRadius)}>
+              Ampliar a {nextRadius} km
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={focusSearch}>
+              Buscar otra zona
+            </Button>
+          )}
+        </StateMessage>
       ) : null}
-      {status !== 'loading' && stationCount > 0 && visible.withFuelCount === 0 ? (
-        <EmptyState title={`Ninguna gasolinera de esta zona publica ${fuelLabel}.`} />
+
+      {!loading && stationCount > 0 && visible.withFuelCount === 0 ? (
+        <StateMessage icon={Fuel} title={`Nadie vende ${fuel.label} aquí`} description="Cambia de combustible o amplía la distancia.">
+          {otherFuel !== undefined ? (
+            <Button variant="secondary" onClick={() => selectFuel(otherFuel)}>
+              Ver {findFuel(otherFuel).label}
+            </Button>
+          ) : null}
+          {nextRadius ? (
+            <Button variant="secondary" onClick={() => usePreferences.getState().setRadiusKm(nextRadius)}>
+              Ampliar a {nextRadius} km
+            </Button>
+          ) : null}
+        </StateMessage>
       ) : null}
-      {status !== 'loading' && visible.withFuelCount > 0 && visible.ranked.length === 0 ? (
-        <EmptyState title="Los filtros dejan fuera todas las gasolineras." action="Quitar filtros" onAction={clearFilters} />
+
+      {!loading && visible.withFuelCount > 0 && visible.ranked.length === 0 ? (
+        <StateMessage icon={SearchX} title="Ningún resultado con estos filtros" description="Quita algún filtro para ver más gasolineras.">
+          <Button variant="secondary" onClick={() => usePreferences.getState().clearFilters()}>
+            Quitar filtros
+          </Button>
+        </StateMessage>
       ) : null}
-      <div className="space-y-3" aria-live="polite">
-        {visible.ranked.map((item) => (
-          <StationCard
-            key={item.station.id}
-            item={item}
-            selected={item.station.id === selectedId}
-            compared={compareIds.includes(item.station.id)}
-            average={provinceAverage}
-            provinceName={provinceName}
-            onSelect={(id) => useSession.getState().selectStation(id)}
-            onCompare={(id) => useSession.getState().toggleCompare(id)}
-          />
-        ))}
-      </div>
+
+      {visible.ranked.length > 0 ? (
+        <ol
+          aria-label="Gasolineras"
+          aria-busy={loading}
+          className={`space-y-3 transition-opacity duration-200 ${loading ? 'opacity-60' : ''}`}
+        >
+          {visible.ranked.map((item) => (
+            <li key={item.station.id}>
+              <StationCard
+                item={item}
+                selected={item.station.id === selectedId}
+                bestReason={item.isBest ? (visible.recommendation?.short ?? null) : null}
+                now={visible.now}
+                onSelect={select}
+              />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
+      {visible.ranked.length > 0 && visible.recommendation?.estimate ? (
+        <p className="px-1 pt-1 text-caption text-subtle">
+          Recomendación estimada con {visible.assumptions.liters} L y el coste del desvío. Puedes ajustarlo en Ajustes.
+        </p>
+      ) : null}
     </div>
   )
 }
 
-function EmptyState({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  return (
-    <div className="rounded-3xl border border-dashed border-line p-4">
-      <p className="text-sm">{title}</p>
-      {action && onAction ? (
-        <Button className="mt-3" variant="secondary" onClick={onAction}>
-          {action}
-        </Button>
-      ) : null}
-    </div>
-  )
+/** Filters row, shown only while browsing the list. */
+export function BrowseControls({ visible }: { visible: VisibleStations }) {
+  const origin = useSession((state) => state.origin)
+  if (!origin) return null
+  return <FilterBar brands={visible.brands} activeFilters={visible.activeFilters} />
 }
 
-function StationSkeletons() {
+function ListSkeleton({ count }: { count: number }) {
   return (
-    <div className="space-y-3" aria-hidden>
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="motion-safe:animate-pulse rounded-3xl border border-line bg-surface p-4">
-          <div className="h-3 w-20 rounded-full bg-line" />
-          <div className="mt-4 h-8 w-32 rounded-full bg-line" />
-          <div className="mt-3 h-3 w-40 rounded-full bg-line" />
-          <div className="mt-2 h-3 w-full rounded-full bg-line" />
-        </div>
+    <div className="space-y-3" role="status" aria-label="Cargando gasolineras">
+      {Array.from({ length: count }, (_, index) => (
+        <StationCardSkeleton key={index} />
       ))}
     </div>
   )
 }
 
-function nextRadius(current: number): number {
-  if (current < 5) return 5
-  if (current < 10) return 10
-  if (current < 20) return 20
-  return 30
-}
-
-function clearFilters() {
-  usePreferences.getState().setBrand(null)
-  usePreferences.getState().setMaxPrice(null)
-  usePreferences.getState().setOpenNow(false)
-}
-
-function isAppError(error: unknown): error is AppError {
-  return typeof error === 'object' && error !== null && 'code' in error && 'message' in error
+function focusSearch() {
+  if (useSession.getState().sheet === 'full') useSession.getState().setSheet('half')
+  document.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus()
 }
